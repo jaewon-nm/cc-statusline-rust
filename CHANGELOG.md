@@ -6,6 +6,18 @@ All notable changes to `ccstatusline-rs`. Date format: ISO `YYYY-MM-DD`. Version
 
 _No changes yet._
 
+## v0.1.2 — 2026-05-14
+
+CI hotfix release. No library / CLI behavior changes.
+
+### Fixed
+
+- **Intel macOS (x86_64-apple-darwin) dropped from the release matrix.** GitHub-hosted `macos-13` Intel runners are being deprecated and queue times grew to 15+ minutes, blocking the publish job (`needs: build`) on otherwise-green runs. Intel macOS users have a clean source-build path: `cargo install --git https://github.com/jaewon-nm/cc-statusline-rust ccstatusline-rs`. The four pre-built archives now shipped on each tag: `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`. Apple Silicon is the only macOS build hosted — adequate given Apple's full transition to ARM. v0.1.1 release run was cancelled mid-queue.
+
+### CI
+
+- First-party GitHub Actions (`actions/checkout`, `actions/upload-artifact`, `actions/download-artifact`) bumped to their Node 24 successors (v5 / v6 / v5) so the deprecation warnings on `actions/checkout@v4` etc. disappear ahead of the 2026-09-16 Node 20 removal.
+
 ## v0.1.1 — 2026-05-14
 
 CI hotfix release. No library / CLI behavior changes — same binary surface as v0.1.0.

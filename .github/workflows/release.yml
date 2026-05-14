@@ -29,9 +29,10 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
             archive: tar.gz
-          - target: x86_64-apple-darwin
-            os: macos-13
-            archive: tar.gz
+          # Intel macOS (x86_64-apple-darwin) intentionally omitted:
+          # `macos-13` Intel runners are being deprecated and have multi-
+          # ten-minute queues. Intel mac users build from source via
+          # `cargo install --git https://github.com/jaewon-nm/cc-statusline-rust`.
     steps:
       - uses: actions/checkout@v5
 

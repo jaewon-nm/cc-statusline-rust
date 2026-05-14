@@ -10,12 +10,14 @@ A single static binary. Three install flows below — pick the recommended one, 
 
 ## Binary size
 
-| Triple | Stripped size |
-|---|---|
-| `x86_64-pc-windows-msvc` | ~1.9 MB |
-| `x86_64-unknown-linux-gnu` | ~1.7 MB (estimated) |
-| `aarch64-apple-darwin` | ~1.7 MB (estimated) |
-| `x86_64-apple-darwin` | ~1.7 MB (estimated) |
+| Triple | Stripped size | Pre-built archive on Releases? |
+|---|---|---|
+| `x86_64-pc-windows-msvc` | ~1.9 MB | ✅ |
+| `x86_64-unknown-linux-gnu` | ~1.7 MB (estimated) | ✅ |
+| `aarch64-apple-darwin` (Apple Silicon) | ~1.7 MB (estimated) | ✅ |
+| `x86_64-apple-darwin` (Intel macOS) | ~1.7 MB (estimated) | ❌ build from source |
+
+Intel macOS is not in the CI release matrix — GitHub-hosted `macos-13` Intel runners are being deprecated and queue times are unpredictable. Intel mac users have a clean source-build path: `cargo install --git https://github.com/jaewon-nm/cc-statusline-rust ccstatusline-rs`. Same end binary, just compiled locally.
 
 Final numbers are reported in `docs/profiling/` once `v0.1.0` ships from CI. Locally measured Windows MSVC build: **1,910,272 bytes**.
 
