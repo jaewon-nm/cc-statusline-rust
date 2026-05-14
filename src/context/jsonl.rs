@@ -7,16 +7,18 @@
 //! always counted even when `stop_reason` is null so the live in-progress turn
 //! still contributes.
 
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use xxhash_rust::xxh3::xxh3_64;
 
 use crate::error::Result;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionTokens {
     pub input: u64,
     pub output: u64,
@@ -136,6 +138,99 @@ pub fn probe_session_tokens(path: &Path) -> Result<Option<SessionTokens>> {
     }
 }
 
+/// Cached variant of [`probe_session_tokens`]. Skips JSONL parsing entirely
+/// when the on-disk cache file's `(mtime_ns, size)` matches the current
+/// transcript. Cache lives under the OS-resolved app cache dir.
+///
+/// Cache failure (missing dir, write race) is never fatal — we re-probe next
+/// time. Returns the same `Ok(None)` semantics as the underlying probe.
+pub fn probe_session_tokens_cached(path: &Path) -> Result<Option<SessionTokens>> {
+    probe_session_tokens_with_cache(path, default_cache_dir().as_deref())
+}
+
+/// Test seam: same logic as [`probe_session_tokens_cached`] but with an
+/// explicit cache root so tests can pin a tempdir. Pass `None` to disable
+/// caching entirely (still a useful path for fixture tests).
+pub fn probe_session_tokens_with_cache(
+    path: &Path,
+    cache_root: Option<&Path>,
+) -> Result<Option<SessionTokens>> {
+    let Ok(metadata) = fs::metadata(path) else {
+        return Ok(None);
+    };
+    let size = metadata.len();
+    let mtime_ns = metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+
+    let cache_file = cache_root.and_then(|root| key_path(root, path));
+
+    if let Some(cf) = cache_file.as_deref()
+        && let Some(entry) = read_cache(cf)
+        && entry.mtime_ns == mtime_ns
+        && entry.size == size
+    {
+        return Ok(Some(entry.tokens));
+    }
+
+    let Some(tokens) = probe_session_tokens(path)? else {
+        return Ok(None);
+    };
+    if let Some(cf) = cache_file.as_deref() {
+        write_cache(
+            cf,
+            &CacheEntry {
+                mtime_ns,
+                size,
+                tokens,
+            },
+        );
+    }
+    Ok(Some(tokens))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CacheEntry {
+    mtime_ns: u128,
+    size: u64,
+    tokens: SessionTokens,
+}
+
+fn default_cache_dir() -> Option<PathBuf> {
+    let dirs = directories::ProjectDirs::from("dev", "naya", "ccstatusline-rs")?;
+    let root = dirs.cache_dir().join("jsonl");
+    fs::create_dir_all(&root).ok()?;
+    Some(root)
+}
+
+fn key_path(cache_root: &Path, transcript_path: &Path) -> Option<PathBuf> {
+    fs::create_dir_all(cache_root).ok()?;
+    let key = format!(
+        "{:016x}.json",
+        xxh3_64(transcript_path.to_string_lossy().as_bytes()),
+    );
+    Some(cache_root.join(key))
+}
+
+fn read_cache(path: &Path) -> Option<CacheEntry> {
+    let raw = fs::read(path).ok()?;
+    serde_json::from_slice(&raw).ok()
+}
+
+fn write_cache(path: &Path, entry: &CacheEntry) {
+    let Ok(serialized) = serde_json::to_vec(entry) else {
+        return;
+    };
+    let tmp = path.with_extension("json.tmp");
+    if fs::write(&tmp, &serialized).is_err() {
+        return;
+    }
+    let _ = fs::rename(&tmp, path);
+}
+
 fn add_usage(accum: &mut SessionTokens, u: &Usage) {
     accum.input += u.input_tokens.unwrap_or(0);
     accum.output += u.output_tokens.unwrap_or(0);
@@ -242,5 +337,64 @@ mod tests {
         let s = probe_session_tokens(f.path()).unwrap().unwrap();
         assert_eq!(s.input, 5);
         assert_eq!(s.output, 2);
+    }
+
+    #[test]
+    fn cache_hit_skips_reparse() {
+        let cache_dir = tempfile::tempdir().unwrap();
+
+        let mut f = NamedTempFile::new().unwrap();
+        writeln!(
+            f,
+            r#"{{"message":{{"usage":{{"input_tokens":11,"output_tokens":3}},"stop_reason":"end_turn"}}}}"#,
+        )
+        .unwrap();
+        f.flush().unwrap();
+
+        // Miss → parses + writes cache.
+        let first = probe_session_tokens_with_cache(f.path(), Some(cache_dir.path()))
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.total(), 14);
+
+        // Cache file exists.
+        let mut cache_files = std::fs::read_dir(cache_dir.path()).unwrap();
+        let entry = cache_files.next().unwrap().unwrap();
+        assert!(entry.path().extension().and_then(|s| s.to_str()) == Some("json"));
+
+        // Mutate the transcript on disk without touching mtime/size accuracy:
+        // overwrite with different bytes that *do* change size, then verify
+        // the cache invalidates and we reparse the new content.
+        std::fs::write(
+            f.path(),
+            br#"{"message":{"usage":{"input_tokens":99,"output_tokens":1},"stop_reason":"end_turn"}}
+"#,
+        )
+        .unwrap();
+        let second = probe_session_tokens_with_cache(f.path(), Some(cache_dir.path()))
+            .unwrap()
+            .unwrap();
+        assert_eq!(second.total(), 100);
+    }
+
+    #[test]
+    fn cache_hit_returns_same_result_without_filesystem_change() {
+        let cache_dir = tempfile::tempdir().unwrap();
+        let mut f = NamedTempFile::new().unwrap();
+        writeln!(
+            f,
+            r#"{{"message":{{"usage":{{"input_tokens":42,"output_tokens":0}},"stop_reason":"end_turn"}}}}"#,
+        )
+        .unwrap();
+        f.flush().unwrap();
+
+        let first = probe_session_tokens_with_cache(f.path(), Some(cache_dir.path()))
+            .unwrap()
+            .unwrap();
+        let second = probe_session_tokens_with_cache(f.path(), Some(cache_dir.path()))
+            .unwrap()
+            .unwrap();
+        assert_eq!(first, second);
+        assert_eq!(first.input, 42);
     }
 }

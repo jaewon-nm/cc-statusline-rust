@@ -56,6 +56,44 @@ impl Config {
             .flat_map(|l| l.iter())
             .any(|k| k.starts_with("git_"))
     }
+
+    /// Reject configs whose schema version we don't recognize or that
+    /// reference widget kinds outside the registry. Layout edits should
+    /// always pass through this gate before persisting.
+    pub fn validate(&self, known_kinds: &[&str]) -> Result<()> {
+        if self.version != CONFIG_VERSION {
+            return Err(Error::InvalidConfig {
+                reason: format!(
+                    "unsupported version {} (expected {CONFIG_VERSION})",
+                    self.version,
+                ),
+            });
+        }
+        for (li, line) in self.lines.iter().enumerate() {
+            for (pi, kind) in line.iter().enumerate() {
+                if !known_kinds.contains(&kind.as_str()) {
+                    return Err(Error::InvalidConfig {
+                        reason: format!("unknown widget kind '{kind}' at lines[{li}][{pi}]",),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Atomic save: serialize to a sibling `.tmp`, then rename onto `path`.
+    /// Caller is responsible for picking the destination (typically
+    /// [`config_path`]).
+    pub fn save(&self, path: &std::path::Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(Error::from)?;
+        }
+        let serialized = serde_json::to_vec_pretty(self).map_err(Error::from)?;
+        let tmp = path.with_extension("json.tmp");
+        fs::write(&tmp, &serialized).map_err(Error::from)?;
+        fs::rename(&tmp, path).map_err(Error::from)?;
+        Ok(())
+    }
 }
 
 /// Resolve the on-disk config path. `CCSTATUSLINE_RS_CONFIG` env var wins so
@@ -77,7 +115,13 @@ pub fn load_or_default() -> Result<Config> {
     let Some(path) = config_path() else {
         return Ok(Config::default_layout());
     };
-    let raw = match fs::read_to_string(&path) {
+    load_from_or_default(&path)
+}
+
+/// Read a specific path, returning the default layout when the file is absent.
+/// Used by `config show` to mirror what the renderer would see.
+pub fn load_from_or_default(path: &std::path::Path) -> Result<Config> {
+    let raw = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             return Ok(Config::default_layout());
@@ -85,13 +129,23 @@ pub fn load_or_default() -> Result<Config> {
         Err(err) => return Err(Error::from(err)),
     };
     let cfg: Config = serde_json::from_str(&raw).map_err(|e| Error::InvalidConfig {
-        reason: format!("{path}: {e}", path = path.display()),
+        reason: format!("{p}: {e}", p = path.display()),
     })?;
     if cfg.version != CONFIG_VERSION {
         return Err(Error::InvalidConfig {
             reason: format!("unsupported version {}", cfg.version),
         });
     }
+    Ok(cfg)
+}
+
+/// Read a specific path, erroring instead of falling back. Used by
+/// `config apply --file` and `config validate --file`.
+pub fn load_from(path: &std::path::Path) -> Result<Config> {
+    let raw = fs::read_to_string(path).map_err(Error::from)?;
+    let cfg: Config = serde_json::from_str(&raw).map_err(|e| Error::InvalidConfig {
+        reason: format!("{p}: {e}", p = path.display()),
+    })?;
     Ok(cfg)
 }
 

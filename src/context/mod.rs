@@ -89,7 +89,7 @@ impl Context {
                     .transcript_path
                     .as_deref()
                     .and_then(non_empty_path)
-                    .and_then(|p| jsonl::probe_session_tokens(p).ok().flatten())
+                    .and_then(|p| jsonl::probe_session_tokens_cached(p).ok().flatten())
                     .map(|s| s.total())
             });
 

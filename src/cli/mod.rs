@@ -55,8 +55,35 @@ pub enum ConfigAction {
         #[arg(long)]
         pretty: bool,
     },
-    /// Validate the on-disk config against the schema.
-    Validate,
+    /// Append a widget kind to a line and persist.
+    Add {
+        /// Widget kind (must match a `widgets` registry entry).
+        kind: String,
+        /// Target line index (default: last). Use a value equal to the
+        /// current line count to start a new line.
+        #[arg(long)]
+        line: Option<usize>,
+        /// Target position within the line (default: append).
+        #[arg(long)]
+        position: Option<usize>,
+    },
+    /// Remove a widget by `(line, position)` indices.
+    Remove {
+        #[arg(long)]
+        line: usize,
+        #[arg(long)]
+        position: usize,
+    },
+    /// Replace the on-disk config with the JSON in `--file`.
+    Apply {
+        #[arg(long)]
+        file: std::path::PathBuf,
+    },
+    /// Validate the on-disk config or an explicit `--file`.
+    Validate {
+        #[arg(long)]
+        file: Option<std::path::PathBuf>,
+    },
 }
 
 pub fn dispatch(cli: Cli) -> Result<()> {
