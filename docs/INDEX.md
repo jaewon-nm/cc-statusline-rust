@@ -27,6 +27,7 @@
 | exec-plans | [completed/004-distribution.md](exec-plans/completed/004-distribution.md) | ✅ completed (2026-05-14) |
 | exec-plans | [completed/005-install-uninstall.md](exec-plans/completed/005-install-uninstall.md) | ✅ completed (2026-05-14) |
 | exec-plans | [completed/006-default-theme-color.md](exec-plans/completed/006-default-theme-color.md) | ✅ completed (2026-05-14) |
+| exec-plans | [completed/007-tokenwatch-aware-install.md](exec-plans/completed/007-tokenwatch-aware-install.md) | ✅ completed (2026-05-14) |
 | researches | _(none yet)_ | — |
 
 ## Reference source (read-only)

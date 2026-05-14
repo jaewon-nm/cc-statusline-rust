@@ -169,6 +169,8 @@ ccstatusline-rs uninstall --purge-binary   # 위에 더해 ~/bin의 바이너리
 
 ## 통합 다이어그램
 
+`ccstatusline-rs install`이 tokenwatch 존재를 자동 감지해서 wrap 모드로 라우팅합니다 — 사용자가 신경 쓸 거 없음(v0.1.3+).
+
 neo-mem과 함께 쓰는 경우의 흐름:
 
 ```

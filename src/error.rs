@@ -40,6 +40,37 @@ pub enum Error {
 
     #[error("backup not found alongside {settings:?}")]
     NoBackupFound { settings: std::path::PathBuf },
+
+    #[error(
+        "tokenwatch wrap pointer at {path:?} already references a non-ccstatusline-rs command: {existing_command}"
+    )]
+    WrapConflict {
+        path: std::path::PathBuf,
+        existing_command: String,
+    },
+
+    #[error(
+        "no install traces found — neither a settings backup nor a tokenwatch wrap pointer at {prev_path:?} points at us (settings: {settings:?})"
+    )]
+    NoInstallTraces {
+        settings: std::path::PathBuf,
+        prev_path: std::path::PathBuf,
+    },
+
+    #[error(
+        "stale wrap pointer: {prev_path:?} references our binary but settings statusLine.command is no longer tokenwatch ({settings_command})"
+    )]
+    StaleWrapPointer {
+        prev_path: std::path::PathBuf,
+        settings_command: String,
+    },
+
+    #[error("tokenwatch wrap pointer at {path:?} is not valid JSON")]
+    InvalidPrev {
+        path: std::path::PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 impl From<serde_json::Error> for Error {

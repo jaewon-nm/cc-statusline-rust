@@ -54,6 +54,35 @@ The command prints a single-line JSON report on stdout (use `--pretty` for inden
 
 **Restart Claude Code** for the new `statusLine` to take effect. Same JSON contract on every platform.
 
+### Coexistence with neo-mem tokenwatch
+
+If `tokenwatch-statusline.mjs` (neo-mem's in-house rate-limits collector) is already wired into your `~/.claude/settings.json`, `install` detects it by basename and **routes through wrap mode** instead of overwriting `settings.json`:
+
+- Binary + Windows `.mjs` wrapper are still placed in `--bin-dir` (tokenwatch needs them to exist — it spawns them).
+- `~/.claude/.tw-statusline-prev.json` is rewritten to point at our command (or refreshed if it already pointed at us — `--bin-dir A → B` relocation is recognized as "still ours" via basename match).
+- `settings.json` is **byte-identical** before and after. No backup is created because nothing changed there.
+- If `.tw-statusline-prev.json` already references a non-ours command (some other tool already grabbed the wrap slot), install fails loudly with `WrapConflict` and the existing command verbatim in the error — no silent overwriting. Reconcile manually before re-running.
+
+Wrap-mode JSON output:
+
+```jsonc
+{
+  "installed": true,
+  "mode": "wrap",
+  "bin": "C:\\Users\\you\\bin\\ccstatusline-rs.exe",
+  "wrapper": "C:\\Users\\you\\bin\\ccstatusline-rs.mjs",
+  "settings": "C:\\Users\\you\\.claude\\settings.json",
+  "backup": null,
+  "copied_binary": true,
+  "previous_command": null,
+  "wrap_prev_path": "C:\\Users\\you\\.claude\\.tw-statusline-prev.json",
+  "previous_wrap_command": null,
+  "wrap_explanation": "settings.json untouched — tokenwatch wrap-mode in effect"
+}
+```
+
+`uninstall` reverses the right artifact based on positive evidence — settings statusLine is tokenwatch AND prev pointer is ours → wrap mode (remove prev, leave settings); a settings backup we wrote → direct mode (restore backup). If nothing matches, uninstall aborts with `NoInstallTraces` rather than restoring the wrong file. If the prev pointer is ours but settings.json is no longer tokenwatch (operator reset tokenwatch externally), uninstall fails with `StaleWrapPointer` so the inconsistency surfaces instead of being silently corrected. An explicit `--backup <path>` always forces direct mode.
+
 ### Pre-built archive (once a tag is cut)
 
 `v*.*.*` tag pushes trigger the CI release workflow which uploads per-triple archives + SHA-256 companions to GitHub Releases. Download, verify, extract, then run `ccstatusline-rs install` from the extracted dir:
@@ -218,4 +247,4 @@ ccstatusline-rs preview --payload sample.json --config candidate.json --diff
 - **`git` widgets blank.** The binary skips git when `cwd` is outside a repo or when probing exceeds an 800 ms wall clock. Confirm with `cd <cwd> && git status` — if that works in <800 ms, file an issue with a profile.
 - **Stale numbers.** The JSONL probe and the git probe both cache to disk. The git cache TTL is 2 s; JSONL cache invalidates on `(mtime, size)` change. Delete `~/.cache/ccstatusline-rs/` (Linux/macOS) or `%LOCALAPPDATA%\dev\naya\ccstatusline-rs\cache\` (Windows) to clear.
 - **Locale shows commas in numbers.** It shouldn't — formatters are locale-independent. If you see commas, file an issue with your OS / Windows locale.
-- **`statusLine` keeps getting overwritten by another tool (neo-mem).** Some plugins rewrite `statusLine` on session start. Run `ccstatusline-rs install` after their rewrite, or disable the conflicting plugin's statusline auto-install setting.
+- **`statusLine` keeps getting overwritten by another tool (neo-mem).** Re-run `ccstatusline-rs install` — starting in v0.1.3 it detects `tokenwatch-statusline.mjs` and routes through wrap mode (`~/.claude/.tw-statusline-prev.json`) instead of overwriting `statusLine`. See "Coexistence with neo-mem tokenwatch" above. Plugins that wrap us through a different basename are not auto-detected — disable that plugin's statusline auto-install setting or use wrap mode manually.

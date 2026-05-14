@@ -22,6 +22,19 @@ const EXE_BASENAME_WINDOWS: &str = "ccstatusline-rs.exe";
 const EXE_BASENAME_POSIX: &str = "ccstatusline-rs";
 const WRAPPER_BASENAME: &str = "ccstatusline-rs.mjs";
 const BACKUP_INFIX: &str = ".ccstatusline-rs-bak-";
+const TOKENWATCH_BASENAME: &str = "tokenwatch-statusline.mjs";
+const TW_PREV_FILENAME: &str = ".tw-statusline-prev.json";
+const WRAP_EXPLANATION: &str = "settings.json untouched — tokenwatch wrap-mode in effect";
+
+/// Basename `contains_basename` looks for when deciding whether the existing
+/// wrap-prev command is ours. Mirrors the targets `compose_command` actually
+/// emits: the JS wrapper on Windows, the bare exe on POSIX.
+fn ours_wrap_basename(platform: Platform) -> &'static str {
+    match platform {
+        Platform::Windows => WRAPPER_BASENAME,
+        Platform::Posix => EXE_BASENAME_POSIX,
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Platform {
@@ -62,20 +75,41 @@ pub struct UninstallArgs {
 #[derive(Debug, Serialize)]
 pub struct InstallReport {
     pub installed: bool,
+    pub mode: InstallMode,
     pub bin: PathBuf,
     pub wrapper: Option<PathBuf>,
     pub settings: PathBuf,
     pub backup: Option<PathBuf>,
     pub copied_binary: bool,
     pub previous_command: Option<String>,
+    /// Path to `.tw-statusline-prev.json` in wrap mode; `None` in direct mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wrap_prev_path: Option<PathBuf>,
+    /// The `command` string previously stored in `.tw-statusline-prev.json`
+    /// before we overwrote it. Projected to just the string so any sibling
+    /// keys neo-mem may add stay out of our audit surface.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_wrap_command: Option<String>,
+    /// Operator-visible explanation when `backup` is `null` because wrap
+    /// mode never touched settings.json. Suppressed in direct mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wrap_explanation: Option<&'static str>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct UninstallReport {
     pub uninstalled: bool,
+    pub mode: UninstallMode,
     pub settings: PathBuf,
-    pub restored_from: PathBuf,
+    /// `Some` when direct mode restored a settings backup. `None` in wrap
+    /// mode where settings was never touched (changed from unconditional
+    /// in 005 — JSON contract bump documented in CHANGELOG).
+    pub restored_from: Option<PathBuf>,
     pub removed: Vec<PathBuf>,
+    /// Path of `.tw-statusline-prev.json` we deleted in wrap-mode uninstall,
+    /// or `None` if it was already absent / direct mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub removed_wrap_prev: Option<PathBuf>,
     /// Files we tried to delete during `--purge-binary` that existed but
     /// resisted removal (locked, ACL'd, etc.). Reported, not fatal.
     pub failed_removals: Vec<FailedRemoval>,
@@ -106,6 +140,94 @@ struct StatusLine {
     command: String,
 }
 
+/// Parsed shape of `.tw-statusline-prev.json`. Only `command` is meaningful
+/// for our coexistence audit; serde flattens any sibling keys neo-mem may
+/// add in future versions so we don't drop them on rewrite.
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
+struct TwPrev {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    command: Option<String>,
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    kind: Option<String>,
+    #[serde(flatten)]
+    extra: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InstallMode {
+    Direct,
+    Wrap,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UninstallMode {
+    Direct,
+    Wrap,
+}
+
+/// Boundary-scanned basename match. Whitespace tokenization would split
+/// quoted Windows paths with spaces and leak the trailing quote into the
+/// matched token (e.g. `node "C:\Users\Jane Doe\...\tokenwatch-statusline.mjs"`).
+/// We scan every substring occurrence and require the surrounding bytes to
+/// be path separators, quotes, whitespace, or the string boundary.
+pub fn contains_basename(cmd: &str, basename: &str) -> bool {
+    if basename.is_empty() {
+        return false;
+    }
+    let bytes = cmd.as_bytes();
+    let bname = basename.as_bytes();
+    let mut start = 0usize;
+    while start + bname.len() <= bytes.len() {
+        let Some(rel) = find_subslice(&bytes[start..], bname) else {
+            return false;
+        };
+        let pos = start + rel;
+        let before_ok = pos == 0 || is_basename_boundary(bytes[pos - 1], true);
+        let after_pos = pos + bname.len();
+        let after_ok = after_pos == bytes.len() || is_basename_boundary(bytes[after_pos], false);
+        if before_ok && after_ok {
+            return true;
+        }
+        start = pos + 1;
+    }
+    false
+}
+
+fn find_subslice(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    hay.windows(needle.len()).position(|w| w == needle)
+}
+
+fn is_basename_boundary(b: u8, before: bool) -> bool {
+    // Leading boundary must be a separator-like byte; trailing boundary
+    // may also be the next path component start? No — basename is the
+    // last component, so the byte AFTER it should never be a separator
+    // continuing the path. We require quote / whitespace / EOL only.
+    if before {
+        matches!(b, b'/' | b'\\' | b'"' | b'\'' | b' ' | b'\t')
+    } else {
+        matches!(b, b'"' | b'\'' | b' ' | b'\t')
+    }
+}
+
+pub fn is_tokenwatch_command(cmd: &str) -> bool {
+    contains_basename(cmd, TOKENWATCH_BASENAME)
+}
+
+pub fn is_ours_wrap_command(cmd: &str, platform: Platform) -> bool {
+    contains_basename(cmd, ours_wrap_basename(platform))
+}
+
+/// Wrap pointer lives in the same directory as the settings file so an
+/// explicit `--settings` override (tests, alt config trees) lands the pointer
+/// next to the settings it coexists with. Default path is therefore
+/// `~/.claude/.tw-statusline-prev.json`.
+fn tw_prev_path(settings_path: &Path) -> PathBuf {
+    let parent = settings_path.parent().unwrap_or(Path::new("."));
+    parent.join(TW_PREV_FILENAME)
+}
+
 pub fn install(args: InstallArgs) -> Result<InstallReport> {
     let platform = Platform::current();
     let bin_dir = resolve_bin_dir(args.bin_dir, platform)?;
@@ -126,46 +248,96 @@ pub fn install(args: InstallArgs) -> Result<InstallReport> {
     };
 
     let settings_path = resolve_settings_path(args.settings)?;
-    let (previous_command, backup) = if settings_path.exists() {
-        let existing_bytes = fs::read(&settings_path).map_err(|source| Error::FileIo {
+    let existing_bytes = if settings_path.exists() {
+        Some(fs::read(&settings_path).map_err(|source| Error::FileIo {
             operation: "read_settings",
             path: settings_path.clone(),
             source,
-        })?;
+        })?)
+    } else {
+        None
+    };
+    let parsed_settings = match existing_bytes.as_ref() {
+        None => ClaudeSettings::default(),
+        Some(b) if b.is_empty() => ClaudeSettings::default(),
+        Some(b) => serde_json::from_slice(b).map_err(|e| Error::InvalidConfig {
+            reason: format!("{p}: {e}", p = settings_path.display()),
+        })?,
+    };
+
+    let current_cmd = parsed_settings
+        .status_line
+        .as_ref()
+        .map(|s| s.command.as_str())
+        .unwrap_or("");
+    let mode = if is_tokenwatch_command(current_cmd) {
+        InstallMode::Wrap
+    } else {
+        InstallMode::Direct
+    };
+
+    match mode {
+        InstallMode::Direct => install_direct(InstallDirectCtx {
+            platform,
+            dest_exe,
+            wrapper,
+            settings_path,
+            existing_bytes,
+            copied_binary,
+            previous_command: if current_cmd.is_empty() {
+                None
+            } else {
+                Some(current_cmd.to_string())
+            },
+        }),
+        InstallMode::Wrap => install_wrap(InstallWrapCtx {
+            platform,
+            dest_exe,
+            wrapper,
+            settings_path,
+            copied_binary,
+        }),
+    }
+}
+
+struct InstallDirectCtx {
+    platform: Platform,
+    dest_exe: PathBuf,
+    wrapper: Option<PathBuf>,
+    settings_path: PathBuf,
+    existing_bytes: Option<Vec<u8>>,
+    copied_binary: bool,
+    previous_command: Option<String>,
+}
+
+fn install_direct(ctx: InstallDirectCtx) -> Result<InstallReport> {
+    let InstallDirectCtx {
+        platform,
+        dest_exe,
+        wrapper,
+        settings_path,
+        existing_bytes,
+        copied_binary,
+        previous_command,
+    } = ctx;
+
+    let backup = if let Some(bytes) = existing_bytes.as_ref() {
         let backup_path = next_backup_filename(&settings_path)?;
-        fs::write(&backup_path, &existing_bytes).map_err(|source| Error::FileIo {
+        fs::write(&backup_path, bytes).map_err(|source| Error::FileIo {
             operation: "backup_settings",
             path: backup_path.clone(),
             source,
         })?;
-        let parsed: ClaudeSettings = if existing_bytes.is_empty() {
-            ClaudeSettings::default()
-        } else {
-            serde_json::from_slice(&existing_bytes).map_err(|e| Error::InvalidConfig {
-                reason: format!("{p}: {e}", p = settings_path.display()),
-            })?
-        };
-        let prev = parsed.status_line.as_ref().map(|s| s.command.clone());
-        (prev, Some(backup_path))
+        Some(backup_path)
     } else {
-        (None, None)
+        None
     };
 
-    let mut settings = if let Some(backup_path) = backup.as_ref() {
-        let raw = fs::read(backup_path).map_err(|source| Error::FileIo {
-            operation: "reread_settings",
-            path: backup_path.clone(),
-            source,
-        })?;
-        if raw.is_empty() {
-            ClaudeSettings::default()
-        } else {
-            serde_json::from_slice(&raw).map_err(|e| Error::InvalidConfig {
-                reason: format!("{p}: {e}", p = settings_path.display()),
-            })?
-        }
-    } else {
-        ClaudeSettings::default()
+    let mut settings: ClaudeSettings = match existing_bytes.as_deref() {
+        None | Some(&[]) => ClaudeSettings::default(),
+        Some(b) => serde_json::from_slice(b).map_err(|e| Error::InvalidConfig {
+            reason: format!("{p}: {e}", p = settings_path.display()),
+        })?,
     };
 
     let command = compose_command(platform, &dest_exe, wrapper.as_deref());
@@ -179,32 +351,161 @@ pub fn install(args: InstallArgs) -> Result<InstallReport> {
 
     Ok(InstallReport {
         installed: true,
+        mode: InstallMode::Direct,
         bin: dest_exe,
         wrapper,
         settings: settings_path,
         backup,
         copied_binary,
         previous_command,
+        wrap_prev_path: None,
+        previous_wrap_command: None,
+        wrap_explanation: None,
     })
+}
+
+struct InstallWrapCtx {
+    platform: Platform,
+    dest_exe: PathBuf,
+    wrapper: Option<PathBuf>,
+    settings_path: PathBuf,
+    copied_binary: bool,
+}
+
+fn install_wrap(ctx: InstallWrapCtx) -> Result<InstallReport> {
+    let InstallWrapCtx {
+        platform,
+        dest_exe,
+        wrapper,
+        settings_path,
+        copied_binary,
+    } = ctx;
+
+    let prev_path = tw_prev_path(&settings_path);
+    // Settings.json itself sits at ~/.claude/settings.json; the wrap pointer
+    // lives in the same directory, so make sure it exists before writing.
+    if let Some(parent) = prev_path.parent() {
+        create_dir(parent, "create_tw_prev_dir")?;
+    }
+
+    let prev_existing = read_tw_prev(&prev_path)?;
+    let previous_wrap_command = prev_existing.as_ref().and_then(|p| p.command.clone());
+    if let Some(existing) = previous_wrap_command.as_deref()
+        && !existing.is_empty()
+        && !is_ours_wrap_command(existing, platform)
+    {
+        return Err(Error::WrapConflict {
+            path: prev_path,
+            existing_command: existing.to_string(),
+        });
+    }
+
+    let our_command = compose_command(platform, &dest_exe, wrapper.as_deref());
+    // Preserve neo-mem's extra keys verbatim — they may add fields to the
+    // wrap pointer in future versions and silently dropping them would be
+    // an upgrade hazard.
+    let mut prev = prev_existing.unwrap_or_default();
+    prev.command = Some(our_command);
+    prev.kind = Some("command".to_string());
+
+    let serialized = serde_json::to_vec_pretty(&prev).map_err(Error::from)?;
+    ioutil::atomic_write_bytes(&prev_path, &serialized)?;
+
+    Ok(InstallReport {
+        installed: true,
+        mode: InstallMode::Wrap,
+        bin: dest_exe,
+        wrapper,
+        settings: settings_path,
+        backup: None,
+        copied_binary,
+        previous_command: None,
+        wrap_prev_path: Some(prev_path),
+        previous_wrap_command,
+        wrap_explanation: Some(WRAP_EXPLANATION),
+    })
+}
+
+/// Read `.tw-statusline-prev.json` if it exists. An empty file is treated
+/// as "no pointer set" rather than a parse error so neo-mem's clear-state
+/// idiom doesn't trip us.
+fn read_tw_prev(path: &Path) -> Result<Option<TwPrev>> {
+    let bytes = match fs::read(path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(Error::FileIo {
+                operation: "read_tw_prev",
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    };
+    let trimmed = bytes
+        .iter()
+        .copied()
+        .filter(|b| !b.is_ascii_whitespace())
+        .count();
+    if trimmed == 0 {
+        return Ok(None);
+    }
+    serde_json::from_slice::<TwPrev>(&bytes)
+        .map(Some)
+        .map_err(|source| Error::InvalidPrev {
+            path: path.to_path_buf(),
+            source,
+        })
 }
 
 pub fn uninstall(args: UninstallArgs) -> Result<UninstallReport> {
     let platform = Platform::current();
     let settings_path = resolve_settings_path(args.settings)?;
+    let prev_path = tw_prev_path(&settings_path);
 
-    let backup_path = match args.backup {
-        Some(p) => p,
-        None => find_latest_backup(&settings_path)?.ok_or_else(|| Error::NoBackupFound {
-            settings: settings_path.clone(),
-        })?,
+    let mode = resolve_uninstall_mode(&settings_path, &prev_path, platform, args.backup.is_some())?;
+
+    let (restored_from, removed_wrap_prev) = match mode {
+        UninstallMode::Direct => {
+            let backup_path = match args.backup.clone() {
+                Some(p) => p,
+                None => {
+                    find_latest_backup(&settings_path)?.ok_or_else(|| Error::NoBackupFound {
+                        settings: settings_path.clone(),
+                    })?
+                }
+            };
+            let bytes = fs::read(&backup_path).map_err(|source| Error::FileIo {
+                operation: "read_backup",
+                path: backup_path.clone(),
+                source,
+            })?;
+            ioutil::atomic_write_bytes(&settings_path, &bytes)?;
+            (Some(backup_path), None)
+        }
+        UninstallMode::Wrap => {
+            // Re-read the prev file inside the mutating window so a mid-op
+            // neo-mem refresh that swapped the pointer is detected before
+            // we delete it. We only remove when it still points at us.
+            let removed = match read_tw_prev(&prev_path)? {
+                Some(prev)
+                    if prev
+                        .command
+                        .as_deref()
+                        .map(|c| is_ours_wrap_command(c, platform))
+                        .unwrap_or(false) =>
+                {
+                    fs::remove_file(&prev_path).map_err(|source| Error::FileIo {
+                        operation: "remove_tw_prev",
+                        path: prev_path.clone(),
+                        source,
+                    })?;
+                    Some(prev_path.clone())
+                }
+                _ => None,
+            };
+            (None, removed)
+        }
     };
-
-    let bytes = fs::read(&backup_path).map_err(|source| Error::FileIo {
-        operation: "read_backup",
-        path: backup_path.clone(),
-        source,
-    })?;
-    ioutil::atomic_write_bytes(&settings_path, &bytes)?;
 
     let mut removed = Vec::new();
     let mut failed_removals = Vec::new();
@@ -229,11 +530,91 @@ pub fn uninstall(args: UninstallArgs) -> Result<UninstallReport> {
 
     Ok(UninstallReport {
         uninstalled: true,
+        mode,
         settings: settings_path,
-        restored_from: backup_path,
+        restored_from,
         removed,
+        removed_wrap_prev,
         failed_removals,
     })
+}
+
+/// Positive-evidence mode resolution. Step ordering is load-bearing — the
+/// stale-pointer check has to fire before the direct-mode backup heuristic
+/// can mask it, and an explicit `--backup` always forces Direct so the
+/// operator stays in control of the restore.
+fn resolve_uninstall_mode(
+    settings_path: &Path,
+    prev_path: &Path,
+    platform: Platform,
+    explicit_backup: bool,
+) -> Result<UninstallMode> {
+    if explicit_backup {
+        return Ok(UninstallMode::Direct);
+    }
+
+    let settings_cmd = read_settings_command(settings_path)?;
+    let prev = read_tw_prev(prev_path)?;
+    let prev_is_ours = prev
+        .as_ref()
+        .and_then(|p| p.command.as_deref())
+        .map(|c| is_ours_wrap_command(c, platform))
+        .unwrap_or(false);
+    let settings_is_tw = settings_cmd
+        .as_deref()
+        .map(is_tokenwatch_command)
+        .unwrap_or(false);
+
+    // Stale-pointer guard — surfaces before the direct heuristic falls
+    // through and silently restores the wrong file.
+    if prev_is_ours && !settings_is_tw {
+        return Err(Error::StaleWrapPointer {
+            prev_path: prev_path.to_path_buf(),
+            settings_command: settings_cmd.clone().unwrap_or_default(),
+        });
+    }
+
+    if settings_is_tw && prev_is_ours {
+        return Ok(UninstallMode::Wrap);
+    }
+
+    // Direct evidence: a backup we wrote, or settings.json statusLine
+    // command whose basename is ours.
+    let has_backup = find_latest_backup(settings_path)?.is_some();
+    let settings_is_ours = settings_cmd
+        .as_deref()
+        .map(|c| is_ours_wrap_command(c, platform))
+        .unwrap_or(false);
+    if has_backup || settings_is_ours {
+        return Ok(UninstallMode::Direct);
+    }
+
+    Err(Error::NoInstallTraces {
+        settings: settings_path.to_path_buf(),
+        prev_path: prev_path.to_path_buf(),
+    })
+}
+
+fn read_settings_command(settings_path: &Path) -> Result<Option<String>> {
+    let bytes = match fs::read(settings_path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(Error::FileIo {
+                operation: "read_settings",
+                path: settings_path.to_path_buf(),
+                source,
+            });
+        }
+    };
+    if bytes.is_empty() {
+        return Ok(None);
+    }
+    let parsed: ClaudeSettings =
+        serde_json::from_slice(&bytes).map_err(|e| Error::InvalidConfig {
+            reason: format!("{p}: {e}", p = settings_path.display()),
+        })?;
+    Ok(parsed.status_line.map(|s| s.command))
 }
 
 pub fn emit_install_report(report: &InstallReport, pretty: bool) -> Result<()> {
@@ -565,6 +946,85 @@ mod tests {
         let settings = std::path::PathBuf::from("/nonexistent/dir/settings.json");
         let result = find_latest_backup(&settings).unwrap();
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn detects_tokenwatch_in_canonical_paths() {
+        let cases = [
+            "node \"C:\\Users\\you\\AppData\\Local\\Temp\\neo-mem\\1.1.97\\scripts\\tokenwatch-statusline.mjs\"",
+            "node \"C:\\Users\\you\\.neo-mem\\runtime\\neo-mem\\win32-x64\\1.2.10-a1e85cb5\\scripts\\tokenwatch-statusline.mjs\"",
+            "node /home/dev/.neo-mem/runtime/neo-mem/linux-x64/2.0.0/scripts/tokenwatch-statusline.mjs",
+        ];
+        for cmd in cases {
+            assert!(
+                is_tokenwatch_command(cmd),
+                "expected tokenwatch detection for: {cmd}",
+            );
+        }
+    }
+
+    #[test]
+    fn detects_tokenwatch_in_quoted_windows_path_with_spaces() {
+        let cmd = "node \"C:\\Users\\Jane Doe\\.neo-mem\\runtime\\neo-mem\\win32-x64\\1.2.10\\scripts\\tokenwatch-statusline.mjs\"";
+        assert!(is_tokenwatch_command(cmd));
+    }
+
+    #[test]
+    fn does_not_match_my_tokenwatch_statusline_variant() {
+        // Leading-boundary check must reject basename-prefixed lookalikes
+        // (here `my-tokenwatch-statusline.mjs`) — the byte before the
+        // matched basename is `-`, not a separator/quote/whitespace.
+        assert!(!is_tokenwatch_command("node my-tokenwatch-statusline.mjs"));
+    }
+
+    #[test]
+    fn does_not_match_unrelated_commands() {
+        for cmd in [
+            "node my-statusline.mjs",
+            "powershell -c \"echo hi\"",
+            "/usr/bin/echo hi",
+            "",
+        ] {
+            assert!(!is_tokenwatch_command(cmd), "false positive for: {cmd}");
+        }
+    }
+
+    #[test]
+    fn is_ours_wrap_command_matches_relocated_bin_dir() {
+        let a = "node \"/custom/bin/ccstatusline-rs.mjs\"";
+        let b = "node \"/other/bin/ccstatusline-rs.mjs\"";
+        assert!(is_ours_wrap_command(a, Platform::Windows));
+        assert!(is_ours_wrap_command(b, Platform::Windows));
+        // POSIX wrap pointer holds the single-quoted bare exe path.
+        let p = "'/home/dev/.local/bin/ccstatusline-rs'";
+        assert!(is_ours_wrap_command(p, Platform::Posix));
+        let q = "'/opt/tools/ccstatusline-rs'";
+        assert!(is_ours_wrap_command(q, Platform::Posix));
+    }
+
+    #[test]
+    fn contains_basename_rejects_basename_concat() {
+        // `tokenwatch-statusline.mjs.bak` shares the prefix but the trailing
+        // boundary is `.`, not quote/whitespace/EOL — must reject.
+        assert!(!contains_basename(
+            "node /path/tokenwatch-statusline.mjs.bak",
+            "tokenwatch-statusline.mjs"
+        ));
+    }
+
+    #[test]
+    fn contains_basename_empty_needle_is_false() {
+        assert!(!contains_basename("anything", ""));
+    }
+
+    #[test]
+    fn wrap_install_writes_posix_compose_command_form() {
+        // Pin the wrap-mode command field to `compose_command(Posix, _, None)`
+        // so a future refactor that forks the wrap-command builder away from
+        // compose_command trips this assertion immediately.
+        let exe = Path::new("/usr/local/bin/ccstatusline-rs");
+        let from_compose = compose_command(Platform::Posix, exe, None);
+        assert_eq!(from_compose, "'/usr/local/bin/ccstatusline-rs'");
     }
 
     #[test]

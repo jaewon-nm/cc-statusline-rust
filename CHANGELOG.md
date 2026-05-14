@@ -6,6 +6,31 @@ All notable changes to `ccstatusline-rs`. Date format: ISO `YYYY-MM-DD`. Version
 
 _No changes yet._
 
+## v0.1.3 — 2026-05-14
+
+Tokenwatch-aware install / uninstall. Coexists with neo-mem's `tokenwatch-statusline.mjs` instead of clobbering its `statusLine` hook.
+
+### Changed (JSON contract — agents that pattern-match this field, update)
+
+- **`UninstallReport.restored_from` is now `Option<PathBuf>`** (was unconditional `PathBuf` in 0.1.0–0.1.2). Direct mode still emits a path string; new wrap mode emits `null` because settings.json was never touched. Same field name, additive value — only consumers that asserted `restored_from` is always a string need a tweak.
+- **`UninstallReport` gained `mode: "direct" | "wrap"`** plus a `removed_wrap_prev` field. **`InstallReport` gained `mode`** plus `wrap_prev_path`, `previous_wrap_command`, and `wrap_explanation`. All are additive and absent-when-`null` in serialized output thanks to `skip_serializing_if`.
+
+### Added
+
+- **Tokenwatch wrap-mode detection (007).** `install` now inspects `settings.json statusLine.command` before touching it. If the command's basename is `tokenwatch-statusline.mjs` (neo-mem's man-in-the-middle), install switches to **wrap mode**: copies the binary + Windows wrapper as usual, then writes our command into `~/.claude/.tw-statusline-prev.json` (the pointer tokenwatch reads to delegate downstream). settings.json is left byte-identical. Operators see `mode: "wrap"`, `backup: null`, and a `wrap_explanation` line in the JSON report.
+- **Basename detection (`contains_basename`).** Boundary-scanned substring match — surrounding bytes must be path separators, quotes, or whitespace. Survives Windows quoted paths with spaces (e.g. `node "C:\Users\Jane Doe\.neo-mem\…\tokenwatch-statusline.mjs"`) and rejects `my-tokenwatch-statusline.mjs` lookalikes.
+- **Positive-evidence uninstall.** Wrap mode requires both `settings.statusLine.command` to be tokenwatch AND `.tw-statusline-prev.json` to point at us. Direct mode falls back to "a backup we wrote exists" OR "settings command is ours". When neither holds, uninstall aborts with `NoInstallTraces` rather than restoring the wrong artifact. An explicit `--backup <path>` always forces Direct mode so operators stay in control.
+- **Stale-pointer guard.** If `.tw-statusline-prev.json` is ours but `settings.json` is no longer tokenwatch, uninstall fails loudly with `StaleWrapPointer { prev_path, settings_command }` instead of silently restoring a backup that no longer matches reality.
+- **`WrapConflict` rejection.** Pre-existing `.tw-statusline-prev.json` referencing a non-ours command (some other operator-installed wrap) causes install to refuse with the existing command verbatim in the error message. No multi-wrap chaining; the operator decides what wins.
+- New typed errors: `Error::WrapConflict`, `Error::NoInstallTraces`, `Error::StaleWrapPointer`, `Error::InvalidPrev { source: serde_json::Error }` (via `#[source]`, never stringified).
+- **`InstallMode` / `UninstallMode`** enums on the report structs, JSON-serialized as `"direct" | "wrap"`.
+
+### Notes
+
+- The renderer path is unchanged — wrap mode is purely an install-time routing decision.
+- `--bin-dir` relocation (install A → install B) is correctly recognized as "still ours" via basename match, so the prev pointer is updated in place, never flagged as `WrapConflict`.
+- 12 new wrap-mode end-to-end tests in `tests/install_uninstall_wrap.rs`, 8 new unit tests in `src/cli/install.rs::tests`. All 192 / 192 tests pass.
+
 ## v0.1.2 — 2026-05-14
 
 CI hotfix release. No library / CLI behavior changes.
