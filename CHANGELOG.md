@@ -6,6 +6,14 @@ All notable changes to `ccstatusline-rs`. Date format: ISO `YYYY-MM-DD`. Version
 
 _No changes yet._
 
+## v0.1.1 — 2026-05-14
+
+CI hotfix release. No library / CLI behavior changes — same binary surface as v0.1.0.
+
+### Fixed
+
+- **macOS CI runner toolchain install.** `dtolnay/rust-toolchain@master` was failing to install Rust 1.94 on `macos-latest` (arm64) and `macos-13` (x86_64) silently, sending `cargo build` through `rustup-init` in bootstrap mode and crashing with `unexpected argument 'build'`. Switched both `ci.yml` and `release.yml` to `actions-rust-lang/setup-rust-toolchain@v1` and added an explicit `rustup show active-toolchain` verification step before any cargo invocation. The v0.1.0 release run was cancelled mid-queue; v0.1.1 is the first tag that exercises the fixed workflow.
+
 ## v0.1.0 — 2026-05-14
 
 First tagged release. Aggregates milestones M0 through 006 (default theme color). 172 / 172 tests; Codex-reviewed at every plan boundary. Pre-built archives per target triple on the GitHub Release page.
