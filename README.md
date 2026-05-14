@@ -1,8 +1,6 @@
-# ccstatusline-rs (beta)
+# ccstatusline-rs
 
 Rust port of [`ccstatusline`](https://github.com/sirmalloc/ccstatusline) — Claude Code의 상태 줄을 그리는 작은 프로그램. 색상이 들어간 두 줄짜리 기본 테마와 함께, **AI 에이전트가 직접 설정·설치·삭제까지 할 수 있도록** 디자인되어 있습니다.
-
-> ⚠️ **Beta** — API/CLI는 안정적이지만 v0.1.0 태그 전이라 일부 동작이 바뀔 수 있습니다. 사용 중 문제 발견하면 [Issues](https://github.com/jaewon-nm/cc-statusline-rust/issues)에 남겨주세요.
 
 ## 기본 화면
 
@@ -19,47 +17,66 @@ Rust port of [`ccstatusline`](https://github.com/sirmalloc/ccstatusline) — Cla
 
 ---
 
-## 에이전트한테 시키기 (권장)
+## 두 줄 요약
 
-설치·설정·되돌리기 모두 한 명령으로 끝납니다. Claude Code(또는 다른 에이전트)에게 다음처럼 부탁하면 알아서 처리해요:
-
-> "ccstatusline-rs를 빌드해서 ~/bin에 설치하고 Claude Code statusLine에 연결해줘."
-
-> "ccstatusline-rs config color session_cost를 yellow로 바꿔줘."
-
-> "ccstatusline-rs를 깔끔히 제거하고 이전 statusLine으로 되돌려줘."
-
-에이전트는 아래 정리된 CLI 명령을 그대로 실행할 수 있고, 각 명령은 JSON 결과를 돌려주기 때문에 에이전트가 다음 행동을 결정하기에 충분합니다.
-
-`ccstatusline-rs --help`로 사람이 읽기 좋은 도움말도 볼 수 있어요. 모든 서브커맨드에 `--help`가 달려 있습니다.
+1. **설치는 한 줄.** 바이너리를 받거나 빌드한 뒤 `ccstatusline-rs install` — 끝.
+2. **커스터마이즈는 에이전트에게.** "session_cost 색 빨강으로 바꿔줘" 한 마디면 됩니다.
 
 ---
 
-## 직접 하기 — 설치
+## 설치
+
+[**Releases 페이지**](https://github.com/jaewon-nm/cc-statusline-rust/releases/latest)에서 자기 OS용 아카이브를 받아 풀고:
 
 ```powershell
-# 1. 소스에서 빌드
-cargo build --release
+# Windows
+.\ccstatusline-rs.exe install
 
-# 2. 한 명령으로 설치 — 바이너리 복사 + 래퍼 생성 + Claude Code 설정 연결
-./target/release/ccstatusline-rs install
+# macOS / Linux
+./ccstatusline-rs install
 ```
 
-`install`은 자동으로 다음을 합니다:
+이게 자동으로:
+- 바이너리를 `~/bin`(Windows) / `~/.local/bin`(macOS·Linux)에 복사
+- Windows: 작은 Node 래퍼 같이 생성 (Claude Code Windows의 `statusLine` 명령 형식 제한 우회)
+- `~/.claude/settings.json` **백업** 후 `statusLine` 항목만 교체 (다른 설정 손대지 않음)
 
-- 바이너리를 `~/bin`(Windows) / `~/.local/bin`(macOS·Linux)에 복사.
-- Windows 한정: 작은 Node 래퍼(`ccstatusline-rs.mjs`)를 같이 만들어요. Claude Code Windows 빌드가 statusLine 명령을 `node "..."` 꼴로만 받아주는 버그 때문입니다.
-- `~/.claude/settings.json`을 **백업**한 뒤 `statusLine` 항목만 우리 명령으로 교체. 다른 설정은 손대지 않음.
+그 다음 **Claude Code를 완전 종료하고 다시 실행**하면 끝. 두 줄짜리 컬러 statusLine이 화면 아래쪽에 표시됩니다.
 
-설치 후 **Claude Code를 완전 종료하고 다시 실행**해야 반영됩니다.
+neo-mem의 tokenwatch를 이미 쓰고 있다면 그게 우리 명령을 자동으로 wrap해서 호출합니다 (본 문서 끝 "통합 다이어그램" 참고).
 
-### neo-mem과 함께 쓰는 경우
-
-`tokenwatch-statusline.mjs`가 이미 등록돼 있으면 그게 우리 명령을 wrapper로 호출하도록 자동 설정됩니다(자세한 흐름은 본 문서 마지막 "통합 다이어그램" 참고).
+> 직접 빌드하고 싶으면 [`INSTALL.md`](INSTALL.md)의 "Build from source" 섹션 참고. Rust 1.94 toolchain만 있으면 됩니다.
 
 ---
 
-## 직접 하기 — 사용 / 변경
+## 제거
+
+```powershell
+ccstatusline-rs uninstall                  # 설정만 되돌리기
+ccstatusline-rs uninstall --purge-binary   # 바이너리·래퍼까지 같이 삭제
+```
+
+`uninstall`은 install 직전 시점의 `settings.json`을 자동으로 골라 원자적으로 복구합니다. 더 오래된 시점이 필요하면 `--backup <경로>`.
+
+---
+
+## 커스터마이즈 — 에이전트에게 시키기 (권장)
+
+Claude Code(또는 다른 AI 에이전트)에게 자연어로 부탁하세요. 에이전트가 아래 CLI 명령을 알아서 골라 실행합니다:
+
+> "ccstatusline-rs에 git_branch 위젯 추가해줘."
+>
+> "session_cost 색을 노랑으로 바꿔줘."
+>
+> "지금 설정 보여주고, model 위젯을 빨강 굵게로 바꿔줘."
+>
+> "방금 바꾼 설정이 어떻게 보이는지 미리보기 띄워줘."
+
+모든 명령은 JSON 결과를 stdout으로 돌려줘서 에이전트가 다음 행동을 결정할 수 있습니다. 도움말은 `ccstatusline-rs --help` (전체) 또는 `ccstatusline-rs <subcommand> --help` (각 서브커맨드).
+
+---
+
+## 직접 커스터마이즈 — 사람이 쓰는 경우
 
 ### 설정 확인
 ```powershell
