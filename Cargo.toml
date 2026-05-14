@@ -5,10 +5,18 @@ edition = "2024"
 rust-version = "1.94"
 description = "Rust port of ccstatusline — agent-friendly status line formatter for Claude Code CLI"
 license = "MIT"
-repository = "https://github.com/sirmalloc/ccstatusline"
+repository = "https://github.com/jaewon-nm/cc-statusline-rust"
+homepage = "https://github.com/jaewon-nm/cc-statusline-rust"
 readme = "README.md"
 keywords = ["claude", "claude-code", "cli", "status-line", "terminal"]
 categories = ["command-line-utilities"]
+exclude = [
+    "/references/",
+    "/docs/",
+    "/.github/",
+    "/.mcp.json",
+    "/CLAUDE.md",
+]
 
 [[bin]]
 name = "ccstatusline-rs"
