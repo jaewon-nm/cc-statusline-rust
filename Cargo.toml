@@ -1,0 +1,43 @@
+[package]
+name = "ccstatusline-rs"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+description = "Rust port of ccstatusline — agent-friendly status line formatter for Claude Code CLI"
+license = "MIT"
+repository = "https://github.com/sirmalloc/ccstatusline"
+readme = "README.md"
+keywords = ["claude", "claude-code", "cli", "status-line", "terminal"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "ccstatusline-rs"
+path = "src/main.rs"
+
+[lib]
+name = "ccstatusline_rs"
+path = "src/lib.rs"
+
+[dependencies]
+anstyle = "1.0.14"
+anstyle-query = "1.1.5"
+anyhow = "1.0.102"
+clap = { version = "4.6.1", features = ["derive"] }
+directories = "6.0.0"
+jiff = "0.2.24"
+schemars = "1.2.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+thiserror = "2.0.18"
+unicode-width = "0.2.2"
+
+[dev-dependencies]
+assert_cmd = "2.2.2"
+insta = "1.47.2"
+predicates = "3.1.4"
+tempfile = "3.27.0"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

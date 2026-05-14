@@ -1,0 +1,12 @@
+/target
+
+# Insta scratch snapshots — accepted ones go into tests/snapshots/*.snap
+*.snap.new
+*.snap.bak
+
+# Local-only upstream clone (see README for re-clone command).
+/references/
+
+# OS junk
+.DS_Store
+Thumbs.db

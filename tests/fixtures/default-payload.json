@@ -1,0 +1,18 @@
+{
+  "session_id": "bootstrap-default",
+  "cwd": "F:\\Works\\naya\\cc-statusline-rust",
+  "model": { "id": "claude-opus-4-7", "display_name": "Opus 4.7 (1M context)" },
+  "cost": { "total_cost_usd": 2.55 },
+  "context_window": {
+    "context_window_size": 1000000,
+    "current_usage": 80000,
+    "used_percentage": 8
+  },
+  "rate_limits": {
+    "five_hour":  { "used_percentage": 21, "resets_at": 1778727600 },
+    "seven_day":  { "used_percentage": 20, "resets_at": 1779138000 }
+  },
+  "ccstatusline_rs": {
+    "session_tokens": 85300
+  }
+}
