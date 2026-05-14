@@ -6,8 +6,11 @@ All notable changes to `ccstatusline-rs`. Date format: ISO `YYYY-MM-DD`. Version
 
 ### Added
 
+- **`install` / `uninstall` subcommands (005).** One-shot wiring into Claude Code: copies the binary to `~/bin` (Windows) or `~/.local/bin` (POSIX), writes a `.mjs` wrapper on Windows (works around the Claude Code Windows-native `statusLine` regression [#31670](https://github.com/anthropics/claude-code/issues/31670)), backs up `~/.claude/settings.json`, and rewrites only the `statusLine` block. Unknown top-level settings keys survive verbatim through a `#[serde(flatten)] extra` round-trip. `uninstall` reverts the most-recent install via atomic temp+rename, with `--purge-binary` to also remove the binary and wrapper. Codex 4-round verify-plan AGREE before implementation.
+- `crate::ioutil::atomic_write_bytes` — shared atomic-write helper. Temp filename includes pid + monotonic counter so concurrent installers don't collide. `Config::save` now routes through it.
+- New typed errors: `Error::FileIo { operation, path, source }` and `Error::NoBackupFound { settings }`.
 - **Distribution scaffolding (M5).** GitHub Actions CI (test + clippy + fmt on Linux/macOS/Windows) and Release workflow (4 target triples: `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`, `x86_64-apple-darwin`). Tagged pushes (`v*.*.*`) produce per-target archives with SHA-256 companions, attached to a generated GitHub Release.
-- `INSTALL.md` — agent-specific install paths, Claude Code wiring example, color opt-in instructions, troubleshooting.
+- `INSTALL.md` restructured into three sections (Recommended / Manual / Uninstall).
 - `CHANGELOG.md` (this file).
 
 ### Changed

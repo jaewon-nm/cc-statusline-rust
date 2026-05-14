@@ -29,6 +29,17 @@ pub enum Error {
 
     #[error("probe '{name}' failed: {reason}")]
     ProbeFailed { name: &'static str, reason: String },
+
+    #[error("file operation '{operation}' failed for {path:?}: {source}")]
+    FileIo {
+        operation: &'static str,
+        path: std::path::PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("backup not found alongside {settings:?}")]
+    NoBackupFound { settings: std::path::PathBuf },
 }
 
 impl From<serde_json::Error> for Error {

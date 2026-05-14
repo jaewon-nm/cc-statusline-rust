@@ -4,6 +4,7 @@
 
 mod config_cmds;
 mod inspect;
+pub mod install;
 mod preview;
 pub mod render;
 
@@ -52,6 +53,35 @@ pub enum Command {
         /// Requires `--config` so the candidate has something to diff against.
         #[arg(long)]
         diff: bool,
+    },
+    /// Drop the binary (and Windows wrapper) into a bin dir and wire the
+    /// `statusLine` block of Claude Code's settings file. Atomic and
+    /// idempotent; the previous settings are backed up next to the file.
+    Install {
+        #[arg(long, value_name = "DIR")]
+        bin_dir: Option<std::path::PathBuf>,
+        #[arg(long, value_name = "FILE")]
+        settings: Option<std::path::PathBuf>,
+        /// Re-copy the binary even when contents match.
+        #[arg(long)]
+        force: bool,
+        #[arg(long)]
+        pretty: bool,
+    },
+    /// Revert the most recent `install` by restoring the latest backup. With
+    /// `--purge-binary` also removes the binary and Windows wrapper from the
+    /// chosen bin dir.
+    Uninstall {
+        #[arg(long, value_name = "FILE")]
+        settings: Option<std::path::PathBuf>,
+        #[arg(long, value_name = "FILE")]
+        backup: Option<std::path::PathBuf>,
+        #[arg(long, value_name = "DIR")]
+        bin_dir: Option<std::path::PathBuf>,
+        #[arg(long)]
+        purge_binary: bool,
+        #[arg(long)]
+        pretty: bool,
     },
 }
 
@@ -124,5 +154,33 @@ pub fn dispatch(cli: Cli) -> Result<()> {
             config,
             diff,
         }) => preview::run(payload.as_deref(), config.as_deref(), diff),
+        Some(Command::Install {
+            bin_dir,
+            settings,
+            force,
+            pretty,
+        }) => {
+            let report = install::install(install::InstallArgs {
+                bin_dir,
+                settings,
+                force,
+            })?;
+            install::emit_install_report(&report, pretty)
+        }
+        Some(Command::Uninstall {
+            settings,
+            backup,
+            bin_dir,
+            purge_binary,
+            pretty,
+        }) => {
+            let report = install::uninstall(install::UninstallArgs {
+                settings,
+                backup,
+                bin_dir,
+                purge_binary,
+            })?;
+            install::emit_uninstall_report(&report, pretty)
+        }
     }
 }

@@ -104,18 +104,11 @@ impl Config {
         Ok(())
     }
 
-    /// Atomic save: serialize to a sibling `.tmp`, then rename onto `path`.
-    /// Caller is responsible for picking the destination (typically
-    /// [`config_path`]).
+    /// Atomic save through the shared [`crate::ioutil::atomic_write_bytes`]
+    /// helper. Caller picks the destination (typically [`config_path`]).
     pub fn save(&self, path: &std::path::Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(Error::from)?;
-        }
         let serialized = serde_json::to_vec_pretty(self).map_err(Error::from)?;
-        let tmp = path.with_extension("json.tmp");
-        fs::write(&tmp, &serialized).map_err(Error::from)?;
-        fs::rename(&tmp, path).map_err(Error::from)?;
-        Ok(())
+        crate::ioutil::atomic_write_bytes(path, &serialized)
     }
 }
 

@@ -7,6 +7,7 @@ pub mod cli;
 pub mod config;
 pub mod context;
 pub mod error;
+pub mod ioutil;
 pub mod render;
 pub mod widgets;
 
