@@ -9,9 +9,15 @@ use serde_json::Value;
 const FIXTURE: &[u8] = include_bytes!("fixtures/default-payload.json");
 
 #[test]
-fn renderer_default_invocation_matches_golden() {
+fn renderer_default_invocation_matches_golden_plain() {
+    // Drive the underlying-text invariant through the real binary; NO_COLOR
+    // is the public opt-out so the bytes drop the ANSI escapes the default
+    // theme would otherwise emit.
     let assert = Command::cargo_bin("ccstatusline-rs")
         .unwrap()
+        .env("NO_COLOR", "1")
+        .env_remove("FORCE_COLOR")
+        .env_remove("CLICOLOR_FORCE")
         .write_stdin(FIXTURE)
         .assert()
         .success();
@@ -22,6 +28,24 @@ fn renderer_default_invocation_matches_golden() {
         "⏱ 5h [##........](21%) ↻ 12:00 | 📅 7d [##........](20%) ↻ 5/19 06:00\n",
     );
     assert_eq!(stdout, expected);
+}
+
+#[test]
+fn renderer_default_invocation_emits_ansi_by_default() {
+    let assert = Command::cargo_bin("ccstatusline-rs")
+        .unwrap()
+        .env_remove("NO_COLOR")
+        .write_stdin(FIXTURE)
+        .assert()
+        .success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    // Auto mode without NO_COLOR emits ANSI escapes (theme cyan + threshold
+    // greens populate the bar's filled cells).
+    assert!(
+        stdout.contains("\x1b["),
+        "expected ANSI escape in default output"
+    );
+    assert!(stdout.contains("Opus 4.7"));
 }
 
 #[test]

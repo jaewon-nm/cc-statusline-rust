@@ -4,8 +4,17 @@ All notable changes to `ccstatusline-rs`. Date format: ISO `YYYY-MM-DD`. Version
 
 ## Unreleased
 
+### Changed (BREAKING — default theme bytes)
+
+- **Default theme now ships with color (006).** Underlying text is unchanged so existing log scrapes / PR-friendly diffs still work, but `cargo run -- < payload.json` now emits ANSI escapes by default. The `insta` snapshot rolled forward to the new colored bytes; the prior plain-text bytes are recoverable via `NO_COLOR=1` or the new `ColorMode::Never` library seam. Theme palette and progress-bar tier rules locked in [`docs/design-docs/default-theme.md`](docs/design-docs/default-theme.md). Codex 4-round verify-plan AGREE + post-impl review.
+
 ### Added
 
+- **Threshold-aware progress bars.** `context_bar`, `block_timer`, `weekly_timer` paint the filled portion green / yellow / red at 0–49 / 50–79 / 80+ percent. User `config color` overrides replace tier colors end-to-end (see design-doc).
+- **`WidgetSpec::render: fn(&Context) -> Option<Vec<Segment>>`** — widgets emit multiple styled segments. Bar widgets compose `[bracket-default · filled-tier · empty-default · bracket-default · …]`; `git_changes` splits into `+green / -red`. Renderer applies user-override (whole-widget replace) on top.
+- **`ColorMode::{Auto, Always, Never}`** library seam (`render::color`, re-exported at lib root). Tests pin `Always` / `Never` so the suite stays deterministic regardless of the developer's `NO_COLOR` / `FORCE_COLOR` shell env. Production callers use `Auto`, which now defaults to on (Claude Code reliably renders our ANSI).
+- **`bar_filled_count(percent, width)`** helper in `render::format` so multi-segment widgets can split a bar into independently styled runs.
+- **`Segment::styled(text, style)`** constructor.
 - **`install` / `uninstall` subcommands (005).** One-shot wiring into Claude Code: copies the binary to `~/bin` (Windows) or `~/.local/bin` (POSIX), writes a `.mjs` wrapper on Windows (works around the Claude Code Windows-native `statusLine` regression [#31670](https://github.com/anthropics/claude-code/issues/31670)), backs up `~/.claude/settings.json`, and rewrites only the `statusLine` block. Unknown top-level settings keys survive verbatim through a `#[serde(flatten)] extra` round-trip. `uninstall` reverts the most-recent install via atomic temp+rename, with `--purge-binary` to also remove the binary and wrapper. Codex 4-round verify-plan AGREE before implementation.
 - `crate::ioutil::atomic_write_bytes` — shared atomic-write helper. Temp filename includes pid + monotonic counter so concurrent installers don't collide. `Config::save` now routes through it.
 - New typed errors: `Error::FileIo { operation, path, source }` and `Error::NoBackupFound { settings }`.

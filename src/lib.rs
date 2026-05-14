@@ -11,5 +11,6 @@ pub mod ioutil;
 pub mod render;
 pub mod widgets;
 
-pub use cli::render::{render_string, render_with};
+pub use cli::render::{render_string, render_with, render_with_mode};
 pub use error::{Error, Result};
+pub use render::color::ColorMode;

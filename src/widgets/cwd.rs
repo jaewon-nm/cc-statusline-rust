@@ -1,12 +1,17 @@
 //! Current working directory. No truncation in the default theme — that
 //! policy belongs to a future config knob.
+//!
+//! Theme default: blue.
+
+use anstyle::{AnsiColor, Style};
 
 use crate::context::Context;
 use crate::render::Segment;
 
-pub fn render(ctx: &Context) -> Option<Segment> {
+pub fn render(ctx: &Context) -> Option<Vec<Segment>> {
     let cwd = ctx.cwd.as_deref()?;
-    Some(Segment::plain(format!("📂 {cwd}")))
+    let style = Style::new().fg_color(Some(AnsiColor::Blue.into()));
+    Some(vec![Segment::styled(format!("📂 {cwd}"), style)])
 }
 
 #[cfg(test)]
@@ -28,10 +33,20 @@ mod tests {
         }
     }
 
+    fn joined(segs: &[Segment]) -> String {
+        segs.iter().map(|s| s.text.as_str()).collect()
+    }
+
     #[test]
     fn renders_full_path() {
-        let s = render(&ctx_with(Some(r"F:\Works\naya\cc-statusline-rust"))).unwrap();
-        assert_eq!(s.text, r"📂 F:\Works\naya\cc-statusline-rust");
+        let segs = render(&ctx_with(Some(r"F:\Works\naya\cc-statusline-rust"))).unwrap();
+        assert_eq!(joined(&segs), r"📂 F:\Works\naya\cc-statusline-rust");
+    }
+
+    #[test]
+    fn renders_theme_default_blue() {
+        let segs = render(&ctx_with(Some("/tmp"))).unwrap();
+        assert_eq!(segs[0].style.get_fg_color(), Some(AnsiColor::Blue.into()));
     }
 
     #[test]

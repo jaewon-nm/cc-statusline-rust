@@ -7,6 +7,7 @@ use crate::config::{self, Config};
 use crate::context::{Context, payload::Payload};
 use crate::error::Result;
 use crate::render;
+use crate::render::color::ColorMode;
 
 pub fn run_from_stdin() -> Result<()> {
     let mut raw = String::new();
@@ -26,8 +27,16 @@ pub fn render_string(raw: &str) -> Result<String> {
 }
 
 /// Render against an explicit config — same path the real CLI takes after
-/// loading from disk.
+/// loading from disk. Defers to [`render_with_mode`] under `ColorMode::Auto`.
 pub fn render_with(raw: &str, cfg: &Config) -> Result<String> {
+    render_with_mode(raw, cfg, ColorMode::Auto)
+}
+
+/// Test seam: render an explicit config under an explicit color mode.
+/// Snapshot tests pin `Always`; plain-text invariant tests pin `Never` so
+/// the output is deterministic regardless of the developer's local
+/// `NO_COLOR` / `FORCE_COLOR` environment.
+pub fn render_with_mode(raw: &str, cfg: &Config, mode: ColorMode) -> Result<String> {
     let payload: Payload = if raw.trim().is_empty() {
         Payload::default()
     } else {
@@ -40,5 +49,5 @@ pub fn render_with(raw: &str, cfg: &Config) -> Result<String> {
     {
         ctx = ctx.with_git(Path::new(&cwd));
     }
-    Ok(render::render(&ctx, cfg))
+    Ok(render::render_with_mode(&ctx, cfg, mode))
 }

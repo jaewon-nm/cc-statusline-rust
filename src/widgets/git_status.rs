@@ -1,15 +1,12 @@
-//! Compact porcelain summary. Each character class is shown only when non-zero,
-//! so a clean repo collapses to `✓` and a noisy repo emits e.g. `S2 M3 ?1 !1`.
-//!
-//! - `S` staged
-//! - `M` unstaged (modified but not staged)
-//! - `?` untracked
-//! - `!` conflicts
+//! Compact porcelain summary. Theme default: yellow (one color across the
+//! whole widget — per-letter coloring is deferred).
+
+use anstyle::{AnsiColor, Style};
 
 use crate::context::Context;
 use crate::render::Segment;
 
-pub fn render(ctx: &Context) -> Option<Segment> {
+pub fn render(ctx: &Context) -> Option<Vec<Segment>> {
     let state = ctx.git.as_ref()?;
     let p = &state.porcelain;
     let mut parts: Vec<String> = Vec::new();
@@ -30,7 +27,8 @@ pub fn render(ctx: &Context) -> Option<Segment> {
     } else {
         parts.join(" ")
     };
-    Some(Segment::plain(format!("⛓ {body}")))
+    let style = Style::new().fg_color(Some(AnsiColor::Yellow.into()));
+    Some(vec![Segment::styled(format!("⛓ {body}"), style)])
 }
 
 #[cfg(test)]
@@ -60,32 +58,42 @@ mod tests {
         }
     }
 
+    fn joined(segs: &[Segment]) -> String {
+        segs.iter().map(|s| s.text.as_str()).collect()
+    }
+
     #[test]
     fn clean_repo_renders_check_mark() {
-        let s = render(&ctx_with(PorcelainCounts::default())).unwrap();
-        assert_eq!(s.text, "⛓ ✓");
+        let segs = render(&ctx_with(PorcelainCounts::default())).unwrap();
+        assert_eq!(joined(&segs), "⛓ ✓");
     }
 
     #[test]
     fn full_breakdown() {
-        let s = render(&ctx_with(PorcelainCounts {
+        let segs = render(&ctx_with(PorcelainCounts {
             staged: 2,
             unstaged: 3,
             untracked: 1,
             conflicts: 1,
         }))
         .unwrap();
-        assert_eq!(s.text, "⛓ S2 M3 ?1 !1");
+        assert_eq!(joined(&segs), "⛓ S2 M3 ?1 !1");
     }
 
     #[test]
     fn untracked_only() {
-        let s = render(&ctx_with(PorcelainCounts {
+        let segs = render(&ctx_with(PorcelainCounts {
             untracked: 5,
             ..PorcelainCounts::default()
         }))
         .unwrap();
-        assert_eq!(s.text, "⛓ ?5");
+        assert_eq!(joined(&segs), "⛓ ?5");
+    }
+
+    #[test]
+    fn theme_default_is_yellow() {
+        let segs = render(&ctx_with(PorcelainCounts::default())).unwrap();
+        assert_eq!(segs[0].style.get_fg_color(), Some(AnsiColor::Yellow.into()));
     }
 
     #[test]

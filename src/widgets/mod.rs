@@ -18,7 +18,10 @@ use crate::render::Segment;
 
 pub struct WidgetSpec {
     pub kind: &'static str,
-    pub render: fn(&Context) -> Option<Segment>,
+    /// A widget emits zero or more styled segments. Multi-segment output is
+    /// how bar widgets compose `[bracket-default · filled-tier · empty ·
+    /// bracket-default]` into a single visually-coherent unit.
+    pub render: fn(&Context) -> Option<Vec<Segment>>,
 }
 
 pub const REGISTRY: &[WidgetSpec] = &[

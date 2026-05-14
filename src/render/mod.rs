@@ -8,7 +8,7 @@ use anstyle::{Reset, Style};
 
 use crate::config::Config;
 use crate::context::Context;
-use crate::render::color::color_enabled;
+use crate::render::color::ColorMode;
 use crate::widgets;
 
 #[derive(Debug, Clone)]
@@ -22,6 +22,16 @@ impl Segment {
         Self {
             text: text.into(),
             style: Style::new(),
+        }
+    }
+
+    /// Widget-emitted segment that carries its own theme style; callers use
+    /// this when the segment's color is part of the theme (e.g. cyan-bold on
+    /// the model name, tier-colored bar cells).
+    pub fn styled(text: impl Into<String>, style: Style) -> Self {
+        Self {
+            text: text.into(),
+            style,
         }
     }
 }
@@ -49,11 +59,18 @@ pub fn render_default(ctx: &Context) -> String {
     render(ctx, &Config::default_layout())
 }
 
-/// Render against an explicit config. Empty lines (no widget produced output)
-/// are dropped so the final string never contains a blank separator row.
-/// Per-widget styling is applied here so widgets stay pure.
+/// Render against an explicit config under `ColorMode::Auto`. Empty lines
+/// (no widget produced output) are dropped so the final string never
+/// contains a blank separator row.
 pub fn render(ctx: &Context, cfg: &Config) -> String {
-    let color_on = color_enabled(false) && !cfg.colors.is_empty();
+    render_with_mode(ctx, cfg, ColorMode::Auto)
+}
+
+/// Test seam: render under an explicit color mode. Snapshot tests pin
+/// `Always`; plain-text invariant tests pin `Never`. Production callers
+/// stick with [`render`] which defers to `Auto`.
+pub fn render_with_mode(ctx: &Context, cfg: &Config, mode: ColorMode) -> String {
+    let color_on = mode.resolve();
     let assembled = cfg
         .lines
         .iter()
@@ -75,19 +92,34 @@ fn build_line<S: AsRef<str>>(
         let Some(spec) = widgets::find(kind_str) else {
             continue;
         };
-        let Some(mut segment) = (spec.render)(ctx) else {
+        let Some(widget_segments) = (spec.render)(ctx) else {
             continue;
         };
-        if color_on
-            && let Some(style_cfg) = cfg.colors.get(kind_str)
-            && let Ok(style) = style_cfg.to_style()
-        {
-            segment.style = style;
+        if widget_segments.is_empty() {
+            continue;
         }
+        // User override: when `cfg.colors[kind]` is set and color emission
+        // is on, replace every segment's theme style with the user color.
+        // `to_style` failure here is defensive — `Config::validate` rejects
+        // unparseable colors before save — so we fall back to widget styles.
+        let user_override: Option<Style> = if color_on {
+            cfg.colors.get(kind_str).and_then(|cs| cs.to_style().ok())
+        } else {
+            None
+        };
         if !first {
             line.push(Segment::plain(INTER_WIDGET_SEPARATOR));
         }
-        line.push(segment);
+        for mut seg in widget_segments {
+            if let Some(style) = user_override {
+                seg.style = style;
+            } else if !color_on {
+                // Color disabled entirely: strip every segment style so
+                // emit() writes raw bytes (no escapes).
+                seg.style = Style::new();
+            }
+            line.push(seg);
+        }
         first = false;
     }
     line

@@ -1,19 +1,21 @@
-//! Weekly (7-day) reset timer. The label `7d` is a layout constant.
+//! Weekly (7-day) reset timer. Same composition as `block_timer` but with
+//! `M/d HH:mm` reset format and `7d` window label.
 
 use crate::context::Context;
 use crate::render::Segment;
-use crate::render::format::{format_bar_wrapped, format_percent_paren, format_weekly_reset};
+use crate::render::format::format_weekly_reset;
+use crate::widgets::block_timer;
 
 const WINDOW_LABEL: &str = "7d";
 
-pub fn render(ctx: &Context) -> Option<Segment> {
+pub fn render(ctx: &Context) -> Option<Vec<Segment>> {
     let t = ctx.weekly.as_ref()?;
-    let bar = format_bar_wrapped(t.used_percent, 10, '#', '.');
-    let pct = format_percent_paren(t.used_percent);
-    let when = format_weekly_reset(t.resets_at, &ctx.tz);
-    Some(Segment::plain(format!(
-        "📅 {WINDOW_LABEL} {bar}{pct} ↻ {when}"
-    )))
+    Some(block_timer::timer_segments(
+        t.used_percent,
+        format_weekly_reset(t.resets_at, &ctx.tz),
+        "📅",
+        WINDOW_LABEL,
+    ))
 }
 
 #[cfg(test)]
@@ -39,6 +41,10 @@ mod tests {
         }
     }
 
+    fn joined(segs: &[Segment]) -> String {
+        segs.iter().map(|s| s.text.as_str()).collect()
+    }
+
     #[test]
     fn renders_default_theme() {
         // 2026-05-19 06:00 KST.
@@ -48,8 +54,8 @@ mod tests {
             .unwrap()
             .timestamp()
             .as_second();
-        let s = render(&ctx_with(20.0, epoch)).unwrap();
-        assert_eq!(s.text, "📅 7d [##........](20%) ↻ 5/19 06:00");
+        let segs = render(&ctx_with(20.0, epoch)).unwrap();
+        assert_eq!(joined(&segs), "📅 7d [##........](20%) ↻ 5/19 06:00");
     }
 
     #[test]

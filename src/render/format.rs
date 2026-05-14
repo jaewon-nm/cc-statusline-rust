@@ -35,6 +35,19 @@ pub fn format_bar_wrapped(percent: f64, width: usize, filled: char, empty: char)
     out
 }
 
+/// Number of filled cells for a bar of the given width at the given percent.
+/// Multi-segment widgets call this to split a bar into independently styled
+/// runs (filled vs empty), so the renderer can apply tier colors to the
+/// filled portion only.
+pub fn bar_filled_count(percent: f64, width: usize) -> usize {
+    let clamped = clamp_percent(percent);
+    if width == 10 {
+        (clamped.trunc() as usize / 10).min(10)
+    } else {
+        ((clamped / 10.0) as usize * width / 10).min(width)
+    }
+}
+
 /// `(21%)`. Floor toward zero for non-negative input.
 pub fn format_percent_paren(percent: f64) -> String {
     let p = clamp_percent(percent).trunc() as u64;

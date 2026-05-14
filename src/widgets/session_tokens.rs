@@ -1,14 +1,20 @@
-//! Abbreviated session token count. Sourced from the namespaced extension
-//! `ccstatusline_rs.session_tokens`; a future JSONL probe will replace the
-//! injection without changing this widget.
+//! Cumulative session token count. Sourced from the namespaced extension
+//! override or the JSONL transcript probe in `context::mod`. Theme default
+//! is magenta.
+
+use anstyle::{AnsiColor, Style};
 
 use crate::context::Context;
 use crate::render::Segment;
 use crate::render::format::abbreviate_tokens;
 
-pub fn render(ctx: &Context) -> Option<Segment> {
+pub fn render(ctx: &Context) -> Option<Vec<Segment>> {
     let n = ctx.session_tokens?;
-    Some(Segment::plain(format!("📊 {}", abbreviate_tokens(n))))
+    let style = Style::new().fg_color(Some(AnsiColor::Magenta.into()));
+    Some(vec![Segment::styled(
+        format!("📊 {}", abbreviate_tokens(n)),
+        style,
+    )])
 }
 
 #[cfg(test)]
@@ -30,9 +36,23 @@ mod tests {
         }
     }
 
+    fn joined(segs: &[Segment]) -> String {
+        segs.iter().map(|s| s.text.as_str()).collect()
+    }
+
     #[test]
     fn renders_default_value() {
-        assert_eq!(render(&ctx_with(Some(85_300))).unwrap().text, "📊 85.3K");
+        let segs = render(&ctx_with(Some(85_300))).unwrap();
+        assert_eq!(joined(&segs), "📊 85.3K");
+    }
+
+    #[test]
+    fn renders_theme_default_magenta() {
+        let segs = render(&ctx_with(Some(1))).unwrap();
+        assert_eq!(
+            segs[0].style.get_fg_color(),
+            Some(AnsiColor::Magenta.into())
+        );
     }
 
     #[test]

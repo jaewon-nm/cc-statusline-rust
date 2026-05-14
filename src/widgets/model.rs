@@ -1,13 +1,19 @@
 //! Model widget. Wraps the display name in `[…]` and prefixes the project
 //! icon. The parenthetical context suffix (e.g. `(1M context)`) is intentionally
 //! preserved — upstream's `Context Window` widget is folded in here.
+//!
+//! Theme default: cyan + bold for the whole widget. User `config color model`
+//! overrides this end-to-end at the renderer layer.
+
+use anstyle::{AnsiColor, Style};
 
 use crate::context::Context;
 use crate::render::Segment;
 
-pub fn render(ctx: &Context) -> Option<Segment> {
+pub fn render(ctx: &Context) -> Option<Vec<Segment>> {
     let name = ctx.model_display.as_deref()?;
-    Some(Segment::plain(format!("✦ [{name}]")))
+    let style = Style::new().fg_color(Some(AnsiColor::Cyan.into())).bold();
+    Some(vec![Segment::styled(format!("✦ [{name}]"), style)])
 }
 
 #[cfg(test)]
@@ -29,10 +35,21 @@ mod tests {
         }
     }
 
+    fn joined(segs: &[Segment]) -> String {
+        segs.iter().map(|s| s.text.as_str()).collect()
+    }
+
     #[test]
     fn renders_with_brackets_and_icon() {
-        let s = render(&ctx_with(Some("Opus 4.7 (1M context)"))).unwrap();
-        assert_eq!(s.text, "✦ [Opus 4.7 (1M context)]");
+        let segs = render(&ctx_with(Some("Opus 4.7 (1M context)"))).unwrap();
+        assert_eq!(joined(&segs), "✦ [Opus 4.7 (1M context)]");
+    }
+
+    #[test]
+    fn renders_theme_default_cyan_bold() {
+        let segs = render(&ctx_with(Some("Opus"))).unwrap();
+        assert_eq!(segs[0].style.get_fg_color(), Some(AnsiColor::Cyan.into()));
+        assert!(segs[0].style.get_effects().contains(anstyle::Effects::BOLD));
     }
 
     #[test]

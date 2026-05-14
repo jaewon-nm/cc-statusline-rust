@@ -1,10 +1,15 @@
 # Default Theme — Golden Output
 
-**Status:** locked (changes require explicit governance update) · **Owner:** jaewon_lee · **Last touched:** 2026-05-14
+**Status:** locked (changes require explicit governance update) · **Owner:** jaewon_lee · **Last touched:** 2026-05-14 (006 — default theme color)
 
-The renderer with the **default config and the canonical payload** must produce exactly this two-line output. This is the `insta` snapshot baseline; any change to the bytes below is a behavior change.
+The renderer with the **default config and the canonical payload** produces two layered guarantees:
 
-## Golden output
+1. **Underlying text** — the literal character bytes, locked here for visual / log-friendliness.
+2. **Colored output** — ANSI escapes that wrap the underlying text per the theme rules below. Locked by the `insta` snapshot at `tests/snapshots/render_default_theme__default_theme_snapshot.snap`.
+
+Both layers must be updated together in any commit that changes the visible appearance.
+
+## Underlying text
 
 ```
 ✦ [Opus 4.7 (1M context)] | 📂 F:\Works\naya\cc-statusline-rust | 🔋 [..........] 80.0K/1.0M(8%) | 📊 85.3K | 💰 $2.55
@@ -67,9 +72,51 @@ The renderer with the **default config and the canonical payload** must produce 
 
 ## Color
 
-- **Default theme is plain text.** No ANSI styling.
-- Reason: diff-friendly, captures cleanly in log files and PR descriptions, makes the `insta` snapshot byte-stable across terminals.
-- Color is opt-in via config. The renderer must respect `NO_COLOR` and `FORCE_COLOR` once color is enabled (handled in `render/`, not per widget).
+The default theme **ships with color** as of milestone 006. The underlying text above is the diff-friendly form that you get with `NO_COLOR=1` (or the test seam `ColorMode::Never`). The full theme adds:
+
+### Per-widget foreground
+
+| Widget | Foreground | Notes |
+|---|---|---|
+| `model` | cyan + bold | The whole `✦ [Opus 4.7 (1M context)]` block. |
+| `cwd` | blue | Full `📂 …` segment. |
+| `context_bar` | bracket/empty/digits default; filled cells tier-colored | See "Progress bar tiers" below. |
+| `session_tokens` | magenta | Whole `📊 85.3K` segment. |
+| `session_cost` | yellow | Whole `💰 $2.55` segment. |
+| `block_timer` | icon + `5h` label dim; bar tier-colored; `(pct%)` dim; reset clock default | Multi-segment. |
+| `weekly_timer` | same as `block_timer` | Multi-segment. |
+| `git_branch` | green | Whole `🌿 main` segment. |
+| `git_status` | yellow | Whole `⛓ …` segment (per-letter coloring deferred). |
+| `git_changes` | `+ins` green, `-dels` red | Multi-segment. |
+
+User overrides via `ccstatusline-rs config color <kind> --fg …` **replace** the theme color end-to-end for the chosen kind (including the threshold-driven bar cells). `config color … --clear` removes the override and falls back to the theme default. The override is replace, not merge — `--fg red` produces a red non-bold widget even if the theme default was cyan-bold.
+
+### Progress bar tiers
+
+`bar_tier_color(percent)` decides the color of the filled cells:
+
+- `0 ≤ percent < 50` → **green** (ok).
+- `50 ≤ percent < 80` → **yellow** (warn).
+- `percent ≥ 80` → **red** (critical).
+- `NaN` collapses to green.
+
+Constants live in `src/render/color.rs` as `BAR_WARN_PERCENT = 50.0` and `BAR_CRIT_PERCENT = 80.0`.
+
+### Color env precedence
+
+`ColorMode::Auto` (the production default) emits color unless overridden:
+
+- `NO_COLOR=<anything>` → off (always wins).
+- `CLICOLOR_FORCE=<anything>` → on.
+- `FORCE_COLOR=<non-empty, non-"0">` → on.
+- Otherwise → on (Claude Code's statusline reliably renders ANSI we feed it).
+
+Tests bypass env via `ColorMode::Always` / `ColorMode::Never` so the suite is deterministic regardless of the developer's shell.
+
+## Change history
+
+- **2026-05-14 — 006 default theme color (this commit).** Color added to the default theme; underlying text unchanged; new `insta` snapshot captures the ANSI bytes. Previous default (plain text, no escapes) is recoverable by running `ColorMode::Never` or piping `NO_COLOR=1` through the binary.
+- **2026-05-14 — M0 bootstrap.** First locked default theme; plain text only, no ANSI.
 
 ## Test fixture
 

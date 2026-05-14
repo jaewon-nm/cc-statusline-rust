@@ -1,13 +1,15 @@
-//! Branch name from the git probe. Falls back silently when not inside a repo
-//! or when the probe returned nothing.
+//! Branch name from the git probe. Theme default: green.
+
+use anstyle::{AnsiColor, Style};
 
 use crate::context::Context;
 use crate::render::Segment;
 
-pub fn render(ctx: &Context) -> Option<Segment> {
+pub fn render(ctx: &Context) -> Option<Vec<Segment>> {
     let state = ctx.git.as_ref()?;
     let branch = state.branch.as_deref()?;
-    Some(Segment::plain(format!("🌿 {branch}")))
+    let style = Style::new().fg_color(Some(AnsiColor::Green.into()));
+    Some(vec![Segment::styled(format!("🌿 {branch}"), style)])
 }
 
 #[cfg(test)]
@@ -38,10 +40,15 @@ mod tests {
         }
     }
 
+    fn joined(segs: &[Segment]) -> String {
+        segs.iter().map(|s| s.text.as_str()).collect()
+    }
+
     #[test]
     fn renders_branch_name_with_icon() {
-        let s = render(&ctx_with(Some("main"))).unwrap();
-        assert_eq!(s.text, "🌿 main");
+        let segs = render(&ctx_with(Some("main"))).unwrap();
+        assert_eq!(joined(&segs), "🌿 main");
+        assert_eq!(segs[0].style.get_fg_color(), Some(AnsiColor::Green.into()));
     }
 
     #[test]
