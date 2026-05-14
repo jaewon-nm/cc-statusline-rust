@@ -2,6 +2,7 @@
 //! (add/remove/set/apply) lands in M2. The schemars-derived schema is exposed
 //! via the `schema` subcommand so agents can self-discover the shape.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -10,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::error::{Error, Result};
+use crate::render::color::{ColorStyle, parse_color};
 
 pub const CONFIG_VERSION: u32 = 1;
 
@@ -24,6 +26,10 @@ pub struct Config {
     /// kinds in left-to-right order. Empty inner vector renders nothing for
     /// that line (and the line is dropped from output).
     pub lines: Vec<Vec<String>>,
+    /// Per-widget-kind styling. Empty / absent = default theme (plain text).
+    /// `BTreeMap` keeps serialized output deterministic.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub colors: BTreeMap<String, ColorStyle>,
 }
 
 impl Config {
@@ -41,6 +47,7 @@ impl Config {
                 ],
                 vec!["block_timer".into(), "weekly_timer".into()],
             ],
+            colors: BTreeMap::new(),
         }
     }
 
@@ -74,6 +81,22 @@ impl Config {
                 if !known_kinds.contains(&kind.as_str()) {
                     return Err(Error::InvalidConfig {
                         reason: format!("unknown widget kind '{kind}' at lines[{li}][{pi}]",),
+                    });
+                }
+            }
+        }
+        for (kind, style) in &self.colors {
+            if !known_kinds.contains(&kind.as_str()) {
+                return Err(Error::InvalidConfig {
+                    reason: format!("colors entry references unknown widget kind '{kind}'"),
+                });
+            }
+            for (field, raw) in [("fg", style.fg.as_deref()), ("bg", style.bg.as_deref())] {
+                if let Some(value) = raw
+                    && let Err(err) = parse_color(value)
+                {
+                    return Err(Error::InvalidConfig {
+                        reason: format!("colors[{kind}].{field}: {err}"),
                     });
                 }
             }
@@ -179,7 +202,32 @@ mod tests {
             version: CONFIG_VERSION,
             tz: None,
             lines: vec![vec!["model".into(), "git_branch".into()]],
+            colors: BTreeMap::new(),
         };
         assert!(cfg.needs_git());
+    }
+
+    #[test]
+    fn validate_rejects_color_for_unknown_widget() {
+        let mut cfg = Config::default_layout();
+        cfg.colors
+            .insert("mystery_widget".into(), ColorStyle::default());
+        let result = cfg.validate(&["model", "cwd"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_rejects_garbage_color_string() {
+        let mut cfg = Config::default_layout();
+        cfg.colors.insert(
+            "model".into(),
+            ColorStyle {
+                fg: Some("burnt sienna".into()),
+                ..ColorStyle::default()
+            },
+        );
+        let known: Vec<&str> = cfg.lines.iter().flatten().map(|s| s.as_str()).collect();
+        let result = cfg.validate(&known);
+        assert!(result.is_err());
     }
 }

@@ -45,6 +45,13 @@ pub enum Command {
         /// Path to a payload JSON file. Defaults to stdin if not set.
         #[arg(long)]
         payload: Option<std::path::PathBuf>,
+        /// Render against a candidate config file instead of the on-disk one.
+        #[arg(long)]
+        config: Option<std::path::PathBuf>,
+        /// Emit JSON with both current + candidate renderings side by side.
+        /// Requires `--config` so the candidate has something to diff against.
+        #[arg(long)]
+        diff: bool,
     },
 }
 
@@ -84,6 +91,26 @@ pub enum ConfigAction {
         #[arg(long)]
         file: Option<std::path::PathBuf>,
     },
+    /// Set / clear per-widget colors.
+    Color {
+        /// Widget kind whose styling should change.
+        kind: String,
+        /// Foreground color. Named (`red`, `bright_blue`) or `#rrggbb`.
+        #[arg(long)]
+        fg: Option<String>,
+        /// Background color, same encoding as `--fg`.
+        #[arg(long)]
+        bg: Option<String>,
+        /// Enable / disable bold. Conflicts with `--no-bold`.
+        #[arg(long, conflicts_with = "no_bold")]
+        bold: bool,
+        /// Explicitly unset bold (different from "absent").
+        #[arg(long)]
+        no_bold: bool,
+        /// Remove the entire colors entry for `<kind>`.
+        #[arg(long, conflicts_with_all = ["fg", "bg", "bold", "no_bold"])]
+        clear: bool,
+    },
 }
 
 pub fn dispatch(cli: Cli) -> Result<()> {
@@ -92,6 +119,10 @@ pub fn dispatch(cli: Cli) -> Result<()> {
         Some(Command::Schema { pretty }) => inspect::schema(pretty),
         Some(Command::Widgets { pretty }) => inspect::widgets(pretty),
         Some(Command::Config { action }) => config_cmds::run(action),
-        Some(Command::Preview { payload }) => preview::run(payload.as_deref()),
+        Some(Command::Preview {
+            payload,
+            config,
+            diff,
+        }) => preview::run(payload.as_deref(), config.as_deref(), diff),
     }
 }

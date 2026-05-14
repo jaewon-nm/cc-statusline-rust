@@ -22,6 +22,14 @@ pub fn run(action: ConfigAction) -> Result<()> {
         ConfigAction::Remove { line, position } => remove(line, position),
         ConfigAction::Apply { file } => apply(&file),
         ConfigAction::Validate { file } => validate(file.as_deref()),
+        ConfigAction::Color {
+            kind,
+            fg,
+            bg,
+            bold,
+            no_bold,
+            clear,
+        } => color(kind, fg, bg, bold, no_bold, clear),
     }
 }
 
@@ -120,6 +128,64 @@ fn validate(file: Option<&std::path::Path>) -> Result<()> {
         }
         Err(err) => Err(err),
     }
+}
+
+fn color(
+    kind: String,
+    fg: Option<String>,
+    bg: Option<String>,
+    bold: bool,
+    no_bold: bool,
+    clear: bool,
+) -> Result<()> {
+    let known: Vec<&str> = widgets::REGISTRY.iter().map(|w| w.kind).collect();
+    if !known.contains(&kind.as_str()) {
+        return Err(Error::InvalidConfig {
+            reason: format!("unknown widget kind '{kind}'"),
+        });
+    }
+    let mut cfg = config::load_or_default()?;
+
+    if clear {
+        cfg.colors.remove(&kind);
+    } else {
+        if fg.is_none() && bg.is_none() && !bold && !no_bold {
+            return Err(Error::InvalidConfig {
+                reason: "specify at least one of --fg / --bg / --bold / --no-bold / --clear".into(),
+            });
+        }
+        // Validate color strings before touching the on-disk config.
+        for (field, value) in [("fg", fg.as_deref()), ("bg", bg.as_deref())] {
+            if let Some(v) = value
+                && let Err(err) = crate::render::color::parse_color(v)
+            {
+                return Err(Error::InvalidConfig {
+                    reason: format!("{field}: {err}"),
+                });
+            }
+        }
+        let entry = cfg
+            .colors
+            .entry(kind.clone())
+            .or_insert_with(Default::default);
+        if let Some(v) = fg {
+            entry.fg = Some(v);
+        }
+        if let Some(v) = bg {
+            entry.bg = Some(v);
+        }
+        if bold {
+            entry.bold = Some(true);
+        } else if no_bold {
+            entry.bold = Some(false);
+        }
+        if entry.is_empty() {
+            cfg.colors.remove(&kind);
+        }
+    }
+
+    persist(&cfg)?;
+    emit_value(&serde_json::to_value(&cfg)?, false)
 }
 
 fn persist(cfg: &Config) -> Result<()> {

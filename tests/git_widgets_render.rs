@@ -40,6 +40,7 @@ fn cfg_with(lines: Vec<Vec<&str>>) -> Config {
             .into_iter()
             .map(|row| row.into_iter().map(String::from).collect())
             .collect(),
+        colors: std::collections::BTreeMap::new(),
     }
 }
 

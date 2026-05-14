@@ -23,6 +23,7 @@
 | exec-plans | [completed/000-bootstrap.md](exec-plans/completed/000-bootstrap.md) | ✅ completed (2026-05-14) |
 | exec-plans | [completed/001-probes.md](exec-plans/completed/001-probes.md) | ✅ completed (2026-05-14) |
 | exec-plans | [completed/002-config-persistence-and-jsonl-cache.md](exec-plans/completed/002-config-persistence-and-jsonl-cache.md) | ✅ completed (2026-05-14) |
+| exec-plans | [completed/003-preview-diff-and-color.md](exec-plans/completed/003-preview-diff-and-color.md) | ✅ completed (2026-05-14) |
 | researches | _(none yet)_ | — |
 
 ## Reference source (read-only)

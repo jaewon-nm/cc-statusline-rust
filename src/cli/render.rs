@@ -40,5 +40,5 @@ pub fn render_with(raw: &str, cfg: &Config) -> Result<String> {
     {
         ctx = ctx.with_git(Path::new(&cwd));
     }
-    Ok(render::render(&ctx, &cfg.lines))
+    Ok(render::render(&ctx, cfg))
 }

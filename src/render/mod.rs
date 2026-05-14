@@ -1,12 +1,14 @@
 //! Segment composition → ANSI line(s). Segments are data; styling enters here
 //! so widgets stay pure and snapshot-test boundaries are clean.
 
+pub mod color;
 pub mod format;
 
 use anstyle::{Reset, Style};
 
 use crate::config::Config;
 use crate::context::Context;
+use crate::render::color::color_enabled;
 use crate::widgets;
 
 #[derive(Debug, Clone)]
@@ -44,29 +46,44 @@ const INTER_WIDGET_SEPARATOR: &str = " | ";
 
 /// Render the default layout. Two lines, ` | ` separator, no trailing newline.
 pub fn render_default(ctx: &Context) -> String {
-    render(ctx, &Config::default_layout().lines)
+    render(ctx, &Config::default_layout())
 }
 
-/// Render an arbitrary layout. Empty lines (no widget produced output) are
-/// dropped so the final string never contains a blank separator row.
-pub fn render(ctx: &Context, lines: &[Vec<String>]) -> String {
-    let assembled = lines
+/// Render against an explicit config. Empty lines (no widget produced output)
+/// are dropped so the final string never contains a blank separator row.
+/// Per-widget styling is applied here so widgets stay pure.
+pub fn render(ctx: &Context, cfg: &Config) -> String {
+    let color_on = color_enabled(false) && !cfg.colors.is_empty();
+    let assembled = cfg
+        .lines
         .iter()
-        .map(|row| build_line(ctx, row))
+        .map(|row| build_line(ctx, row, cfg, color_on))
         .collect::<Vec<_>>();
     emit(&assembled)
 }
 
-fn build_line<S: AsRef<str>>(ctx: &Context, widget_kinds: &[S]) -> Line {
+fn build_line<S: AsRef<str>>(
+    ctx: &Context,
+    widget_kinds: &[S],
+    cfg: &Config,
+    color_on: bool,
+) -> Line {
     let mut line = Line::default();
     let mut first = true;
     for kind in widget_kinds {
-        let Some(spec) = widgets::find(kind.as_ref()) else {
+        let kind_str = kind.as_ref();
+        let Some(spec) = widgets::find(kind_str) else {
             continue;
         };
-        let Some(segment) = (spec.render)(ctx) else {
+        let Some(mut segment) = (spec.render)(ctx) else {
             continue;
         };
+        if color_on
+            && let Some(style_cfg) = cfg.colors.get(kind_str)
+            && let Ok(style) = style_cfg.to_style()
+        {
+            segment.style = style;
+        }
         if !first {
             line.push(Segment::plain(INTER_WIDGET_SEPARATOR));
         }
