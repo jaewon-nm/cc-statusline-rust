@@ -4,6 +4,12 @@ All notable changes to `ccstatusline-rs`. Date format: ISO `YYYY-MM-DD`. Version
 
 ## Unreleased
 
+_No changes yet._
+
+## v0.1.0 — 2026-05-14
+
+First tagged release. Aggregates milestones M0 through 006 (default theme color). 172 / 172 tests; Codex-reviewed at every plan boundary. Pre-built archives per target triple on the GitHub Release page.
+
 ### Changed (BREAKING — default theme bytes)
 
 - **Default theme now ships with color (006).** Underlying text is unchanged so existing log scrapes / PR-friendly diffs still work, but `cargo run -- < payload.json` now emits ANSI escapes by default. The `insta` snapshot rolled forward to the new colored bytes; the prior plain-text bytes are recoverable via `NO_COLOR=1` or the new `ColorMode::Never` library seam. Theme palette and progress-bar tier rules locked in [`docs/design-docs/default-theme.md`](docs/design-docs/default-theme.md). Codex 4-round verify-plan AGREE + post-impl review.
@@ -26,9 +32,9 @@ All notable changes to `ccstatusline-rs`. Date format: ISO `YYYY-MM-DD`. Version
 
 - Release profile already set in M0 (`lto = "thin"`, `codegen-units = 1`, `strip = "symbols"`). Local Windows MSVC build measures **1,910,272 bytes**.
 
-## 0.1.0 — first taggable release (pending)
+### Milestone history (M0–M4)
 
-Aggregates M0–M4. See [`docs/STATUS.md`](docs/STATUS.md) and the per-phase exec-plans under `docs/exec-plans/completed/`.
+The bullets below replay the milestone-level deliverables now rolled into v0.1.0. Detailed exec-plans live under `docs/exec-plans/completed/`.
 
 ### M0 — Bootstrap (2026-05-14)
 
