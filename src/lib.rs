@@ -10,5 +10,5 @@ pub mod error;
 pub mod render;
 pub mod widgets;
 
-pub use cli::render::render_string;
+pub use cli::render::{render_string, render_with};
 pub use error::{Error, Result};

@@ -34,6 +34,7 @@ mod tests {
                 used_percent: pct,
                 resets_at: jiff::Timestamp::from_second(epoch_seconds).unwrap(),
             }),
+            git: None,
             tz: TimeZone::get("Asia/Seoul").unwrap(),
         }
     }

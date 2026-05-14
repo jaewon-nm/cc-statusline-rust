@@ -35,6 +35,7 @@ mod tests {
                 resets_at: jiff::Timestamp::from_second(epoch_seconds).unwrap(),
             }),
             weekly: None,
+            git: None,
             tz: TimeZone::get("Asia/Seoul").unwrap(),
         }
     }

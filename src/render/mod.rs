@@ -5,6 +5,7 @@ pub mod format;
 
 use anstyle::{Reset, Style};
 
+use crate::config::Config;
 use crate::context::Context;
 use crate::widgets;
 
@@ -43,18 +44,24 @@ const INTER_WIDGET_SEPARATOR: &str = " | ";
 
 /// Render the default layout. Two lines, ` | ` separator, no trailing newline.
 pub fn render_default(ctx: &Context) -> String {
-    let lines = widgets::default_layout()
+    render(ctx, &Config::default_layout().lines)
+}
+
+/// Render an arbitrary layout. Empty lines (no widget produced output) are
+/// dropped so the final string never contains a blank separator row.
+pub fn render(ctx: &Context, lines: &[Vec<String>]) -> String {
+    let assembled = lines
         .iter()
         .map(|row| build_line(ctx, row))
         .collect::<Vec<_>>();
-    emit(&lines)
+    emit(&assembled)
 }
 
-fn build_line(ctx: &Context, widget_kinds: &[&'static str]) -> Line {
+fn build_line<S: AsRef<str>>(ctx: &Context, widget_kinds: &[S]) -> Line {
     let mut line = Line::default();
     let mut first = true;
     for kind in widget_kinds {
-        let Some(spec) = widgets::find(kind) else {
+        let Some(spec) = widgets::find(kind.as_ref()) else {
             continue;
         };
         let Some(segment) = (spec.render)(ctx) else {

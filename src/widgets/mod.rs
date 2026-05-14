@@ -5,6 +5,9 @@
 mod block_timer;
 mod context_bar;
 mod cwd;
+mod git_branch;
+mod git_changes;
+mod git_status;
 mod model;
 mod session_cost;
 mod session_tokens;
@@ -47,22 +50,20 @@ pub const REGISTRY: &[WidgetSpec] = &[
         kind: "weekly_timer",
         render: weekly_timer::render,
     },
+    WidgetSpec {
+        kind: "git_branch",
+        render: git_branch::render,
+    },
+    WidgetSpec {
+        kind: "git_status",
+        render: git_status::render,
+    },
+    WidgetSpec {
+        kind: "git_changes",
+        render: git_changes::render,
+    },
 ];
 
 pub fn find(kind: &str) -> Option<&'static WidgetSpec> {
     REGISTRY.iter().find(|w| w.kind == kind)
-}
-
-/// Two-row layout matching `docs/design-docs/default-theme.md`.
-pub fn default_layout() -> &'static [&'static [&'static str]] {
-    &[
-        &[
-            "model",
-            "cwd",
-            "context_bar",
-            "session_tokens",
-            "session_cost",
-        ],
-        &["block_timer", "weekly_timer"],
-    ]
 }

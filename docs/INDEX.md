@@ -21,6 +21,7 @@
 | design-docs | [cc-statusline-rs.md](design-docs/cc-statusline-rs.md) | draft |
 | design-docs | [default-theme.md](design-docs/default-theme.md) | locked |
 | exec-plans | [completed/000-bootstrap.md](exec-plans/completed/000-bootstrap.md) | ✅ completed (2026-05-14) |
+| exec-plans | [completed/001-probes.md](exec-plans/completed/001-probes.md) | ✅ completed (2026-05-14) |
 | researches | _(none yet)_ | — |
 
 ## Reference source (read-only)

@@ -122,6 +122,8 @@ Targets to support: `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, `aarch
 | `jiff` | timer/reset-time widgets — IANA tz built-in, calendar-aware durations (chosen over chrono+chrono-tz to avoid embedded tz DB and naive/aware footguns) |
 | `unicode-width` | width-aware truncation for narrow terminals |
 | `regex` | minimal text munging (model name stripping, etc.) |
+| `wait-timeout` | wall-clock-bounded child process probes (git) |
+| `xxhash-rust` | per-repo cache key hashing for the git probe |
 | `tempfile` (dev) | snapshot/golden-file scaffolding |
 | `assert_cmd` + `predicates` (dev) | end-to-end renderer tests |
 | `insta` (dev) | snapshot tests for rendered ANSI |

@@ -25,6 +25,7 @@ mod tests {
             session_cost_usd: None,
             block: None,
             weekly: None,
+            git: None,
             tz: TimeZone::get("Asia/Seoul").unwrap(),
         }
     }

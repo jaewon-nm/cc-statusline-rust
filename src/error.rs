@@ -23,6 +23,12 @@ pub enum Error {
 
     #[error("layout invariant violated: {message}")]
     LayoutInvariant { message: &'static str },
+
+    #[error("probe '{name}' timed out after {ms}ms")]
+    ProbeTimeout { name: &'static str, ms: u64 },
+
+    #[error("probe '{name}' failed: {reason}")]
+    ProbeFailed { name: &'static str, reason: String },
 }
 
 impl From<serde_json::Error> for Error {

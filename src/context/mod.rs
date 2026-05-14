@@ -4,7 +4,11 @@
 //! domain types (numbers, durations, timezones) — string formatting happens
 //! at `render::format`.
 
+pub mod git;
+pub mod jsonl;
 pub mod payload;
+
+use std::path::Path;
 
 use jiff::{Timestamp, tz::TimeZone};
 
@@ -20,6 +24,9 @@ pub struct Context {
     pub session_cost_usd: Option<f64>,
     pub block: Option<TimerMetrics>,
     pub weekly: Option<TimerMetrics>,
+    /// Populated only when `Context::with_git` is called. Default-theme paths
+    /// keep this `None` so the renderer stays cost-free.
+    pub git: Option<git::GitState>,
     /// Renderer-injected timezone. Default is `Asia/Seoul` (KST) so the
     /// golden snapshot is locale-stable; `Context::resolve_tz(Some("system"))`
     /// opts in to the host clock instead.
@@ -67,7 +74,24 @@ impl Context {
             .as_ref()
             .and_then(extract_context_metrics);
 
-        let session_tokens = payload.extension.as_ref().and_then(|e| e.session_tokens);
+        // Priority order:
+        //   1. `ccstatusline_rs.session_tokens` — explicit override (tests + agent
+        //      overrides bypass disk I/O).
+        //   2. JSONL probe over `transcript_path` — the real, cumulative session
+        //      sum across all API turns.
+        //   3. Neither — yield None so the widget hides.
+        let session_tokens = payload
+            .extension
+            .as_ref()
+            .and_then(|e| e.session_tokens)
+            .or_else(|| {
+                payload
+                    .transcript_path
+                    .as_deref()
+                    .and_then(non_empty_path)
+                    .and_then(|p| jsonl::probe_session_tokens(p).ok().flatten())
+                    .map(|s| s.total())
+            });
 
         let session_cost_usd = payload
             .cost
@@ -94,8 +118,17 @@ impl Context {
             session_cost_usd,
             block,
             weekly,
+            git: None,
             tz,
         })
+    }
+
+    /// Run the git probe against `cwd` and stash the result on the context.
+    /// Caller decides when to invoke this so the default-theme path stays
+    /// free of subprocess overhead.
+    pub fn with_git(mut self, cwd: &Path) -> Self {
+        self.git = git::probe(cwd).ok().flatten();
+        self
     }
 
     /// `None` and the empty string resolve to KST (Asia/Seoul) — the project
@@ -120,6 +153,15 @@ fn non_empty(s: &str) -> Option<String> {
         None
     } else {
         Some(t.to_owned())
+    }
+}
+
+fn non_empty_path(s: &str) -> Option<&Path> {
+    let t = s.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(Path::new(t))
     }
 }
 
@@ -237,5 +279,28 @@ mod tests {
     fn empty_tz_falls_back_to_kst() {
         let tz = Context::resolve_tz(Some("")).unwrap();
         assert_eq!(tz.iana_name(), Some("Asia/Seoul"));
+    }
+
+    #[test]
+    fn session_tokens_use_extension_override_when_present() {
+        let ctx = parse(r#"{ "ccstatusline_rs": { "session_tokens": 42 } }"#);
+        assert_eq!(ctx.session_tokens, Some(42));
+    }
+
+    #[test]
+    fn session_tokens_fall_back_to_jsonl_probe() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        writeln!(
+            f,
+            r#"{{"message":{{"usage":{{"input_tokens":75000,"output_tokens":10300}},"stop_reason":"end_turn"}}}}"#
+        )
+        .unwrap();
+        f.flush().unwrap();
+
+        let path = f.path().to_str().unwrap().replace('\\', "\\\\");
+        let json = format!(r#"{{ "transcript_path": "{path}" }}"#);
+        let ctx = parse(&json);
+        assert_eq!(ctx.session_tokens, Some(85_300));
     }
 }
